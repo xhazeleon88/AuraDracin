@@ -48,7 +48,7 @@ select.input{appearance:none;background-image:none}
 </div>
 </sc-if>
 
-<div style="flex:1;overflow-y:auto;padding-bottom:{{ contentPadBottom }}">
+<div style="flex:1;min-height:0;overflow-y:{{ contentOverflow }};padding-bottom:{{ contentPadBottom }};display:{{ contentDisplay }};flex-direction:column">
 
 <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
 <div>
@@ -267,39 +267,41 @@ select.input{appearance:none;background-image:none}
 </sc-if>
 
 <sc-if value="{{ isWatch }}" hint-placeholder-val="{{ false }}">
-<div style="position:relative;background:var(--color-neutral-900);min-height:100%;color:var(--color-neutral-100);display:flex;flex-direction:column">
+<div style="position:relative;background:var(--color-neutral-900);flex:1;min-height:0;width:100%;color:var(--color-neutral-100);display:flex;flex-direction:column;overflow:hidden">
   <button type="button" class="icon-btn" aria-label="Kembali ke beranda" style="position:absolute;top:6px;left:6px;z-index:10" onClick="{{ goHome }}"><i class="fa-solid fa-chevron-left" style="font-size:20px"></i></button>
 
-  <div style="position:relative;aspect-ratio:9/16;max-height:calc(100vh - 130px);margin:0 auto;width:100%;background:var(--color-neutral-800)">
-    <image-slot id="{{ currentVideo.thumbId }}-player" src="{{ currentVideo.thumbSrc }}" style="width:100%;height:100%" placeholder="{{ currentVideo.title }}"></image-slot>
-    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
-      <div style="width:64px;height:64px;border:2px solid var(--color-neutral-100);border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, var(--color-neutral-900) 40%, transparent)">
-        <i class="fa-solid fa-play" style="font-size:22px;color:var(--color-neutral-100)"></i>
+  <div style="flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--color-neutral-900)">
+    <div style="position:relative;height:100%;width:auto;max-width:100%;aspect-ratio:9/16;background:var(--color-neutral-800)">
+      <image-slot id="{{ currentVideo.thumbId }}-player" src="{{ currentVideo.thumbSrc }}" style="width:100%;height:100%" placeholder="{{ currentVideo.title }}"></image-slot>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+        <div style="width:64px;height:64px;border:2px solid var(--color-neutral-100);border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, var(--color-neutral-900) 40%, transparent)">
+          <i class="fa-solid fa-play" style="font-size:22px;color:var(--color-neutral-100)"></i>
+        </div>
       </div>
-    </div>
-    <div style="position:absolute;right:12px;bottom:16px;display:flex;flex-direction:column;align-items:center;gap:20px">
-      <button type="button" aria-label="Sukai video" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:0;color:inherit" onClick="{{ toggleCurrentLike }}">
-        <i class="fa-solid fa-heart" style="font-size:24px;color:{{ currentVideo.heartColor }}"></i>
-        <span style="font-size:11px">{{ currentVideo.likesLabel }}</span>
-      </button>
-      <button type="button" aria-label="Buka komentar" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:0;color:inherit" onClick="{{ openComments }}">
-        <i class="fa-solid fa-comment" style="font-size:23px;color:var(--color-neutral-100)"></i>
-        <span style="font-size:11px">{{ currentVideo.commentsLabel }}</span>
-      </button>
-      <button type="button" aria-label="Bagikan video" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:0;color:inherit">
-        <i class="fa-solid fa-share" style="font-size:21px;color:var(--color-neutral-100)"></i>
-        <span style="font-size:11px">Bagikan</span>
-      </button>
+      <div style="position:absolute;right:12px;bottom:16px;display:flex;flex-direction:column;align-items:center;gap:20px">
+        <button type="button" aria-label="Sukai video" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:0;color:inherit" onClick="{{ toggleCurrentLike }}">
+          <i class="fa-solid fa-heart" style="font-size:24px;color:{{ currentVideo.heartColor }}"></i>
+          <span style="font-size:11px">{{ currentVideo.likesLabel }}</span>
+        </button>
+        <button type="button" aria-label="Buka komentar" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:0;color:inherit" onClick="{{ openComments }}">
+          <i class="fa-solid fa-comment" style="font-size:23px;color:var(--color-neutral-100)"></i>
+          <span style="font-size:11px">{{ currentVideo.commentsLabel }}</span>
+        </button>
+        <button type="button" aria-label="Bagikan video" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:0;color:inherit">
+          <i class="fa-solid fa-share" style="font-size:21px;color:var(--color-neutral-100)"></i>
+          <span style="font-size:11px">Bagikan</span>
+        </button>
+      </div>
     </div>
   </div>
 
-  <div style="padding:14px 16px 22px;display:flex;flex-direction:column;gap:8px">
+  <div style="flex:none;padding:14px 16px 18px;display:flex;flex-direction:column;gap:8px;background:var(--color-neutral-900);border-top:1px solid var(--color-neutral-800)">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-family:var(--font-heading);font-weight:800;font-size:13px">@admin</span>
       <span class="tag tag-accent-2" style="font-size:10px">{{ currentVideo.categoryLabel }}</span>
     </div>
     <div style="font-size:15px;font-weight:600">{{ currentVideo.title }}</div>
-    <p style="margin:0;font-size:13px;color:var(--color-neutral-400)">{{ currentVideo.caption }}</p>
+    <p style="margin:0;font-size:13px;color:var(--color-neutral-400);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ currentVideo.caption }}</p>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
       <sc-for list="{{ currentVideo.hashtagTags }}" as="h" hint-placeholder-count="3">
         <span class="tag" style="border:1px solid var(--color-neutral-700);color:var(--color-neutral-300)">#{{ h }}</span>
@@ -500,6 +502,8 @@ class Component extends DCLogic {
       isWatch,
       showHeader: !isWatch,
       contentPadBottom: isWatch ? '0px' : '76px',
+      contentOverflow: isWatch ? 'hidden' : 'auto',
+      contentDisplay: isWatch ? 'flex' : 'block',
       showCity: true,
       city: cityName,
       user: s.user,
