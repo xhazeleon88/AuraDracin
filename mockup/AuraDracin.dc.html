@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+<link rel="stylesheet" href="_ds/modernist-e6f339f1-b2f6-40e9-9779-6cebb9d91ff8/styles.css">
+<script src="_ds/modernist-e6f339f1-b2f6-40e9-9779-6cebb9d91ff8/_ds_bundle.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="./image-slot.js"></script>
+<style>
+body{margin:0;background:var(--color-bg);color:var(--color-text)}
+a{color:var(--color-accent);text-decoration:none}
+a:hover{color:var(--color-accent-600)}
+*{scrollbar-width:none}
+::-webkit-scrollbar{display:none}
+select.input{appearance:none;background-image:none}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer}
+.brand-logo{width:40px;height:40px;object-fit:cover;flex:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;display:flex;justify-content:center;background:var(--color-neutral-200)">
+<div style="width:100%;max-width:480px;min-height:100vh;background:var(--color-bg);border-left:2px solid var(--color-divider);border-right:2px solid var(--color-divider);display:flex;flex-direction:column;position:relative">
+
+<sc-if value="{{ showHeader }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-bottom:2px solid var(--color-divider);position:sticky;top:0;background:var(--color-bg);z-index:5">
+  <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onClick="{{ goHome }}">
+    <img class="brand-logo" src="./assets/aura-dracin-mark.jpg" alt="Logo Aura Dracin">
+    <span style="font-family:var(--font-heading);font-weight:800;font-size:20px;color:var(--color-neutral-600)">Aura</span><span style="font-family:var(--font-heading);font-weight:800;font-size:20px;color:var(--color-accent)">Dracin</span>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+    <button type="button" class="icon-btn" aria-label="Cari video"><i class="fa-solid fa-magnifying-glass" style="font-size:17px"></i></button>
+    <sc-if value="{{ user }}" hint-placeholder-val="{{ false }}">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--color-neutral-800);color:var(--color-bg);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:800;font-size:13px;cursor:pointer" onClick="{{ goProfil }}">{{ userInitial }}</div>
+    </sc-if>
+    <sc-if value="{{ notUser }}" hint-placeholder-val="{{ true }}">
+      <button type="button" class="btn btn-primary" onClick="{{ goMasuk }}" style="padding:6px 14px"><i class="fa-solid fa-right-to-bracket"></i>Masuk</button>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+<div style="flex:1;overflow-y:auto;padding-bottom:{{ contentPadBottom }}">
+
+<sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+<div>
+  <div style="position:relative;height:380px;overflow:hidden;border-bottom:2px solid var(--color-divider)">
+    <image-slot id="hero-featured" src="./assets/thumbs/v1.jpg" style="width:100%;height:100%" placeholder="Video unggulan minggu ini"></image-slot>
+    <div style="position:absolute;inset:0;background:linear-gradient(to top, var(--color-neutral-900) 0%, color-mix(in srgb, var(--color-neutral-900) 20%, transparent) 55%, transparent 80%);pointer-events:none"></div>
+    <div style="position:absolute;left:16px;right:16px;bottom:18px;display:flex;flex-direction:column;gap:8px">
+      <span class="tag tag-accent" style="width:fit-content">Unggulan</span>
+      <h2 style="color:var(--color-neutral-100);font-size:24px;margin:0;line-height:1.15">{{ featured.title }}</h2>
+      <button type="button" class="btn btn-primary" style="width:fit-content;margin-top:4px" onClick="{{ goWatchFeatured }}"><i class="fa-solid fa-play"></i>Tonton sekarang</button>
+    </div>
+  </div>
+
+  <div style="padding:20px 0 4px">
+    <div style="padding:0 16px 4px">
+      <h3 style="margin:0;font-size:19px">Lagi Populer</h3>
+      <p class="text-muted" style="margin:2px 0 0;font-size:12px">Yang paling disukai minggu ini</p>
+    </div>
+    <div style="display:flex;gap:12px;overflow-x:auto;padding:14px 16px 6px">
+      <sc-for list="{{ populer }}" as="v" hint-placeholder-count="6">
+        <div style="width:150px;flex:none;display:flex;flex-direction:column;gap:6px;cursor:pointer" onClick="{{ v.open }}">
+          <div style="position:relative;aspect-ratio:9/16;background:var(--color-neutral-900);overflow:hidden">
+            <image-slot id="{{ v.thumbId }}" src="{{ v.thumbSrc }}" style="width:100%;height:100%" placeholder="{{ v.title }}"></image-slot>
+            <sc-if value="{{ v.isNew }}" hint-placeholder-val="{{ false }}">
+              <span class="tag tag-accent" style="position:absolute;top:6px;left:6px;font-size:10px">Baru</span>
+            </sc-if>
+          </div>
+          <div style="font-size:13px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ v.title }}</div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <i class="fa-solid fa-heart" style="font-size:13px;color:{{ v.heartColor }}" onClick="{{ v.toggleLike }}"></i>
+            <span class="text-muted" style="font-size:11px">{{ v.likesLabel }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="padding:20px 0 4px;border-top:2px solid var(--color-divider)">
+    <div style="padding:16px 16px 4px">
+      <h3 style="margin:0;font-size:19px">Terbaru</h3>
+      <p class="text-muted" style="margin:2px 0 0;font-size:12px">Dracin baru upload</p>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px 16px 6px">
+      <sc-for list="{{ terbaru }}" as="v" hint-placeholder-count="6">
+        <div style="display:flex;flex-direction:column;gap:6px;cursor:pointer" onClick="{{ v.open }}">
+          <div style="position:relative;aspect-ratio:9/16;background:var(--color-neutral-900);overflow:hidden">
+            <image-slot id="{{ v.thumbId2 }}" src="{{ v.thumbSrc }}" style="width:100%;height:100%" placeholder="{{ v.title }}"></image-slot>
+            <sc-if value="{{ v.isNew }}" hint-placeholder-val="{{ false }}">
+              <span class="tag tag-accent" style="position:absolute;top:6px;left:6px;font-size:10px">Baru</span>
+            </sc-if>
+          </div>
+          <div style="font-size:13px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ v.title }}</div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <i class="fa-solid fa-heart" style="font-size:13px;color:{{ v.heartColor }}" onClick="{{ v.toggleLike }}"></i>
+            <span class="text-muted" style="font-size:11px">{{ v.likesLabel }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="padding:20px 0 8px;border-top:2px solid var(--color-divider)">
+    <h3 style="margin:0 0 12px;padding:0 16px;font-size:19px">Kategori Cerita</h3>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding:0 16px 6px">
+      <sc-for list="{{ categories }}" as="c" hint-placeholder-count="8">
+        <button type="button" onClick="{{ c.select }}" style="flex:none;font-family:var(--font-body);font-size:13px;padding:8px 14px;border:1px solid var(--color-divider);background:transparent;color:var(--color-text);cursor:pointer">{{ c.label }}</button>
+      </sc-for>
+    </div>
+  </div>
+
+  <sc-if value="{{ showCity }}" hint-placeholder-val="{{ true }}">
+  <div style="padding:20px 0 4px;border-top:2px solid var(--color-divider)">
+    <div style="padding:0 16px 4px">
+      <h3 style="margin:0;font-size:19px">Lagi Rame di {{ city }}</h3>
+      <p class="text-muted" style="margin:2px 0 0;font-size:12px">Video paling hits dari sesama warga {{ city }}</p>
+    </div>
+    <div style="display:flex;gap:12px;overflow-x:auto;padding:14px 16px 6px">
+      <sc-for list="{{ byCity }}" as="v" hint-placeholder-count="6">
+        <div style="width:150px;flex:none;display:flex;flex-direction:column;gap:6px;cursor:pointer" onClick="{{ v.open }}">
+          <div style="position:relative;aspect-ratio:9/16;background:var(--color-neutral-900);overflow:hidden">
+            <image-slot id="{{ v.thumbId3 }}" src="{{ v.thumbSrc }}" style="width:100%;height:100%" placeholder="{{ v.title }}"></image-slot>
+          </div>
+          <div style="font-size:13px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ v.title }}</div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <i class="fa-solid fa-heart" style="font-size:13px;color:{{ v.heartColor }}"></i>
+            <span class="text-muted" style="font-size:11px">{{ v.likesLabel }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <div style="padding:28px 16px;border-top:2px solid var(--color-divider);display:flex;flex-direction:column;gap:10px;font-size:13px">
+    <a href="#">Tentang Aura Dracin</a>
+    <a href="#">Syarat &amp; Ketentuan</a>
+    <a href="#">Kebijakan Privasi</a>
+    <a href="#">Kontak</a>
+    <p class="text-muted" style="margin-top:8px;font-size:11px">© 2026 Aura Dracin. Nonton Dracin, rasain auranya.</p>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isKategori }}" hint-placeholder-val="{{ false }}">
+<div>
+  <div style="display:flex;align-items:center;gap:12px;padding:16px">
+    <button type="button" class="icon-btn" aria-label="Kembali ke beranda" onClick="{{ goHome }}"><i class="fa-solid fa-chevron-left" style="font-size:18px"></i></button>
+    <h3 style="margin:0;font-size:19px">{{ activeCategoryLabel }}</h3>
+  </div>
+  <div style="display:flex;gap:8px;overflow-x:auto;padding:0 16px 14px">
+    <sc-for list="{{ categories }}" as="c" hint-placeholder-count="8">
+      <button type="button" onClick="{{ c.select }}" style="flex:none;font-family:var(--font-body);font-size:13px;padding:8px 14px;border:1px solid {{ c.borderColor }};background:{{ c.bg }};color:{{ c.color }};cursor:pointer">{{ c.label }}</button>
+    </sc-for>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:6px 16px 24px;border-top:2px solid var(--color-divider);padding-top:16px">
+    <sc-for list="{{ categoryVideos }}" as="v" hint-placeholder-count="8">
+      <div style="display:flex;flex-direction:column;gap:6px;cursor:pointer" onClick="{{ v.open }}">
+        <div style="position:relative;aspect-ratio:9/16;background:var(--color-neutral-900);overflow:hidden">
+          <image-slot id="{{ v.thumbId4 }}" src="{{ v.thumbSrc }}" style="width:100%;height:100%" placeholder="{{ v.title }}"></image-slot>
+        </div>
+        <div style="font-size:13px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ v.title }}</div>
+        <div style="display:flex;align-items:center;gap:5px">
+          <i class="fa-solid fa-heart" style="font-size:13px;color:{{ v.heartColor }}"></i>
+          <span class="text-muted" style="font-size:11px">{{ v.likesLabel }}</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isProfil }}" hint-placeholder-val="{{ false }}">
+<div style="padding:28px 20px">
+  <sc-if value="{{ user }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding-bottom:24px;border-bottom:2px solid var(--color-divider);margin-bottom:24px">
+      <div style="width:88px;height:88px;border-radius:50%;background:var(--color-neutral-800);color:var(--color-bg);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:800;font-size:30px">{{ userInitial }}</div>
+      <div style="font-family:var(--font-heading);font-weight:800;font-size:18px">{{ user.name }}</div>
+      <span class="tag tag-outline">{{ user.city }}</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="field">
+        <label>Nama tampilan</label>
+        <input class="input" value="{{ user.name }}" readOnly="{{ true }}"></input>
+      </div>
+      <div class="field">
+        <label>Kota</label>
+        <select class="input" value="{{ user.city }}" onChange="{{ setProfileCity }}">
+          <sc-for list="{{ cityOptions }}" as="ct" hint-placeholder-count="20">
+            <option value="{{ ct }}">{{ ct }}</option>
+          </sc-for>
+        </select>
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input class="input" value="{{ user.email }}" readOnly="{{ true }}"></input>
+      </div>
+      <button type="button" class="btn btn-secondary btn-block" onClick="{{ doLogout }}" style="justify-content:center;margin-top:8px"><i class="fa-solid fa-arrow-right-from-bracket"></i>Keluar</button>
+    </div>
+  </sc-if>
+  <sc-if value="{{ notUser }}" hint-placeholder-val="{{ true }}">
+    <div style="text-align:center;padding:60px 10px;display:flex;flex-direction:column;align-items:center;gap:14px">
+      <p style="font-size:15px;max-width:30ch">Masuk dulu buat lihat profil kamu.</p>
+      <button type="button" class="btn btn-primary" onClick="{{ goMasuk }}"><i class="fa-solid fa-user-plus"></i>Masuk / Daftar</button>
+    </div>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMasuk }}" hint-placeholder-val="{{ false }}">
+<div style="padding:32px 24px">
+  <img src="./assets/aura-dracin-logo.jpg" alt="Aura Dracin" style="width:150px;height:150px;object-fit:cover;margin:0 auto 20px">
+  <h2 style="margin:0 0 4px;font-size:26px">Aura Dracin</h2>
+  <p class="text-muted" style="margin:0 0 24px;font-size:13px">Belum punya akun? Daftar dulu, gratis kok.</p>
+  <div class="seg" style="width:100%;margin-bottom:24px">
+    <label class="seg-opt" style="flex:1;justify-content:center">
+      <input type="radio" name="authtab" checked="{{ authIsMasuk }}" onChange="{{ setTabMasuk }}"></input><span class="dot" style="display:none"></span>Masuk
+    </label>
+    <label class="seg-opt" style="flex:1;justify-content:center">
+      <input type="radio" name="authtab" checked="{{ authIsDaftar }}" onChange="{{ setTabDaftar }}"></input><span class="dot" style="display:none"></span>Daftar
+    </label>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <sc-if value="{{ authIsDaftar }}" hint-placeholder-val="{{ false }}">
+      <div class="field">
+        <label>Nama tampilan</label>
+        <input class="input" placeholder="Nama kamu"></input>
+      </div>
+    </sc-if>
+    <div class="field">
+      <label>Email</label>
+      <input class="input" type="email" placeholder="kamu@email.com"></input>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input class="input" type="password" placeholder="Minimal 8 karakter"></input>
+    </div>
+    <sc-if value="{{ authIsDaftar }}" hint-placeholder-val="{{ false }}">
+      <div class="field">
+        <label>Kota</label>
+        <select class="input">
+          <sc-for list="{{ cityOptions }}" as="ct" hint-placeholder-count="20">
+            <option value="{{ ct }}">{{ ct }}</option>
+          </sc-for>
+        </select>
+      </div>
+    </sc-if>
+    <sc-if value="{{ authIsMasuk }}" hint-placeholder-val="{{ true }}">
+      <a href="#" style="font-size:12px;align-self:flex-end">Lupa password?</a>
+    </sc-if>
+    <button type="button" class="btn btn-primary btn-block" style="justify-content:center" onClick="{{ doLogin }}"><i class="fa-solid fa-right-to-bracket"></i>{{ authSubmitLabel }}</button>
+    <div style="display:flex;align-items:center;gap:10px;color:var(--color-neutral-500);font-size:11px"><div style="flex:1;height:1px;background:var(--color-divider)"></div>atau<div style="flex:1;height:1px;background:var(--color-divider)"></div></div>
+    <button type="button" class="btn btn-secondary btn-block" style="justify-content:center" onClick="{{ doLogin }}"><i class="fa-brands fa-google"></i>Lanjut dengan Google</button>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isWatch }}" hint-placeholder-val="{{ false }}">
+<div style="position:relative;background:var(--color-neutral-900);min-height:100%;color:var(--color-neutral-100);display:flex;flex-direction:column">
+  <button type="button" class="icon-btn" aria-label="Kembali ke beranda" style="position:absolute;top:6px;left:6px;z-index:10" onClick="{{ goHome }}"><i class="fa-solid fa-chevron-left" style="font-size:20px"></i></button>
+
+  <div style="position:relative;aspect-ratio:9/16;max-height:calc(100vh - 130px);margin:0 auto;width:100%;background:var(--color-neutral-800)">
+    <image-slot id="{{ currentVideo.thumbId }}-player" src="{{ currentVideo.thumbSrc }}" style="width:100%;height:100%" placeholder="{{ currentVideo.title }}"></image-slot>
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+      <div style="width:64px;height:64px;border:2px solid var(--color-neutral-100);border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, var(--color-neutral-900) 40%, transparent)">
+        <i class="fa-solid fa-play" style="font-size:22px;color:var(--color-neutral-100)"></i>
+      </div>
+    </div>
+    <div style="position:absolute;right:12px;bottom:16px;display:flex;flex-direction:column;align-items:center;gap:20px">
+      <button type="button" aria-label="Sukai video" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:0;color:inherit" onClick="{{ toggleCurrentLike }}">
+        <i class="fa-solid fa-heart" style="font-size:24px;color:{{ currentVideo.heartColor }}"></i>
+        <span style="font-size:11px">{{ currentVideo.likesLabel }}</span>
+      </button>
+      <button type="button" aria-label="Buka komentar" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:0;color:inherit" onClick="{{ openComments }}">
+        <i class="fa-solid fa-comment" style="font-size:23px;color:var(--color-neutral-100)"></i>
+        <span style="font-size:11px">{{ currentVideo.commentsLabel }}</span>
+      </button>
+      <button type="button" aria-label="Bagikan video" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:0;color:inherit">
+        <i class="fa-solid fa-share" style="font-size:21px;color:var(--color-neutral-100)"></i>
+        <span style="font-size:11px">Bagikan</span>
+      </button>
+    </div>
+  </div>
+
+  <div style="padding:14px 16px 22px;display:flex;flex-direction:column;gap:8px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-family:var(--font-heading);font-weight:800;font-size:13px">@admin</span>
+      <span class="tag tag-accent-2" style="font-size:10px">{{ currentVideo.categoryLabel }}</span>
+    </div>
+    <div style="font-size:15px;font-weight:600">{{ currentVideo.title }}</div>
+    <p style="margin:0;font-size:13px;color:var(--color-neutral-400)">{{ currentVideo.caption }}</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+      <sc-for list="{{ currentVideo.hashtagTags }}" as="h" hint-placeholder-count="3">
+        <span class="tag" style="border:1px solid var(--color-neutral-700);color:var(--color-neutral-300)">#{{ h }}</span>
+      </sc-for>
+    </div>
+  </div>
+
+  <sc-if value="{{ commentSheetOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;background:color-mix(in srgb, var(--color-neutral-900) 55%, transparent);z-index:40" onClick="{{ closeComments }}"></div>
+    <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(480px,100%);height:70vh;background:var(--color-bg);color:var(--color-text);border-top:2px solid var(--color-divider);z-index:41;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;padding:14px 16px;border-bottom:2px solid var(--color-divider)">
+        <h4 style="margin:0;font-size:16px">Komentar</h4>
+        <button type="button" class="icon-btn" aria-label="Tutup komentar" style="margin-left:auto" onClick="{{ closeComments }}"><i class="fa-solid fa-xmark" style="font-size:18px"></i></button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:16px">
+        <sc-for list="{{ comments }}" as="cm" hint-placeholder-count="4">
+          <div style="display:flex;gap:10px">
+            <div style="width:32px;height:32px;flex:none;border-radius:50%;background:var(--color-neutral-300);color:var(--color-text);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">{{ cm.initial }}</div>
+            <div>
+              <div style="display:flex;gap:8px;align-items:baseline"><span style="font-weight:700;font-size:13px">{{ cm.name }}</span><span class="text-muted" style="font-size:11px">{{ cm.time }}</span></div>
+              <p style="margin:2px 0 0;font-size:13px">{{ cm.text }}</p>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <sc-if value="{{ user }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:8px;padding:12px 16px;border-top:2px solid var(--color-divider)">
+          <input class="input" placeholder="Komen scene favoritmu!" value="{{ newCommentText }}" onChange="{{ setNewComment }}"></input>
+          <button type="button" class="btn btn-primary" onClick="{{ submitComment }}"><i class="fa-solid fa-paper-plane"></i>Kirim</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ notUser }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:14px 16px;border-top:2px solid var(--color-divider)">
+          <button type="button" class="btn btn-primary btn-block" style="justify-content:center" onClick="{{ goMasuk }}"><i class="fa-solid fa-comment"></i>Masuk dulu buat kasih komen</button>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+</div>
+</sc-if>
+
+</div>
+
+<sc-if value="{{ showHeader }}" hint-placeholder-val="{{ true }}">
+<div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(480px,100%);display:flex;border-top:2px solid var(--color-divider);background:var(--color-bg);z-index:6">
+  <button type="button" onClick="{{ goHome }}" style="flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;color:{{ homeColor }}">
+    <i class="fa-solid fa-house" style="font-size:19px"></i>
+    <span style="font-size:11px">Beranda</span>
+  </button>
+  <button type="button" onClick="{{ goKategoriNav }}" style="flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;color:{{ kategoriColor }}">
+    <i class="fa-solid fa-grip" style="font-size:18px"></i>
+    <span style="font-size:11px">Kategori</span>
+  </button>
+  <button type="button" onClick="{{ goProfilNav }}" style="flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;color:{{ profilColor }}">
+    <i class="fa-solid fa-user" style="font-size:18px"></i>
+    <span style="font-size:11px">Profil</span>
+  </button>
+</div>
+</sc-if>
+
+<sc-if value="{{ loginModalOpen }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" style="z-index:60">
+    <div class="dialog">
+      <div class="dialog-title">Masuk dulu</div>
+      <div class="dialog-body">Masuk dulu buat kasih love!</div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" onClick="{{ closeLoginModal }}"><i class="fa-solid fa-xmark"></i>Nanti dulu</button>
+        <button type="button" class="btn btn-primary" onClick="{{ confirmLoginModal }}"><i class="fa-solid fa-right-to-bracket"></i>Masuk</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+const CATEGORIES = [
+  { slug: 'romance', label: 'Romance' },
+  { slug: 'balas-dendam', label: 'Balas Dendam' },
+  { slug: 'ceo', label: 'CEO / Bisnis' },
+  { slug: 'fantasi', label: 'Fantasi' },
+  { slug: 'komedi', label: 'Komedi' },
+  { slug: 'keluarga', label: 'Keluarga' },
+  { slug: 'aksi', label: 'Aksi' },
+  { slug: 'misteri', label: 'Misteri' },
+];
+
+const CITY_OPTIONS = ['Jakarta','Surabaya','Bandung','Medan','Semarang','Makassar','Palembang','Tangerang','Depok','Bekasi','Batam','Pekanbaru','Bandar Lampung','Malang','Yogyakarta','Denpasar','Samarinda','Banjarmasin','Pontianak','Manado'];
+
+const VIDEOS = [
+  { id: 'v1', title: 'CEO Dingin, Jatuh Cinta', category: 'ceo', likes: 15200, comments: 412, city: 'Jakarta', isNew: false, hashtags: ['dracin','ceo','romance'], caption: 'Dia dingin ke semua orang, kecuali ke satu asisten yang bikin dia salah tingkah.' },
+  { id: 'v2', title: 'Balas Dendam Sang Pewaris', category: 'balas-dendam', likes: 12300, comments: 356, city: 'Surabaya', isNew: false, hashtags: ['dracin','balasdendam'], caption: 'Diusir dari rumah sendiri, dia kembali dengan rencana yang nggak ada yang nyangka.' },
+  { id: 'v3', title: 'Kembali Demi Cinta', category: 'romance', likes: 9800, comments: 289, city: 'Bandung', isNew: false, hashtags: ['dracin','romance'], caption: 'Sepuluh tahun berpisah, takdir mempertemukan mereka lagi di tempat yang paling nggak terduga.' },
+  { id: 'v4', title: 'Pangeran Fantasi Malam', category: 'fantasi', likes: 8700, comments: 245, city: 'Jakarta', isNew: true, hashtags: ['dracin','fantasi'], caption: 'Sebuah kerajaan kuno, satu ramalan, dan cinta yang melanggar semua aturan.' },
+  { id: 'v5', title: 'Cinta Segitiga di Kantor', category: 'ceo', likes: 7600, comments: 198, city: 'Medan', isNew: false, hashtags: ['dracin','ceo','romance'], caption: 'Dua atasan, satu karyawan magang yang bikin kantor jadi drama tiap hari.' },
+  { id: 'v6', title: 'Rahasia Keluarga Chen', category: 'keluarga', likes: 7100, comments: 176, city: 'Jakarta', isNew: false, hashtags: ['dracin','keluarga'], caption: 'Rahasia yang disimpan tiga generasi akhirnya kebongkar di makan malam ulang tahun.' },
+  { id: 'v7', title: 'Komedi Receh Pengantin Baru', category: 'komedi', likes: 6900, comments: 210, city: 'Semarang', isNew: false, hashtags: ['dracin','komedi'], caption: 'Nikah kontrak yang harusnya cuma formalitas, malah jadi paling receh se-kompleks.' },
+  { id: 'v8', title: 'Misteri Villa Terkutuk', category: 'misteri', likes: 6500, comments: 231, city: 'Makassar', isNew: true, hashtags: ['dracin','misteri'], caption: 'Lima tamu, satu villa tua, dan satu tamu yang sebenarnya sudah lama meninggal.' },
+  { id: 'v9', title: 'Aksi Pembalasan Terakhir', category: 'aksi', likes: 6100, comments: 154, city: 'Jakarta', isNew: false, hashtags: ['dracin','aksi'], caption: 'Mantan agen rahasia ditarik kembali untuk satu misi terakhir yang paling berbahaya.' },
+  { id: 'v10', title: 'Dendam Manis Mantan Istri', category: 'balas-dendam', likes: 5700, comments: 143, city: 'Bandung', isNew: false, hashtags: ['dracin','balasdendam','romance'], caption: 'Diceraikan tanpa alasan, lima tahun kemudian dia kembali jadi CEO yang mereka butuhkan.' },
+  { id: 'v11', title: 'Nikah Kontrak CEO Galak', category: 'ceo', likes: 5400, comments: 167, city: 'Jakarta', isNew: true, hashtags: ['dracin','ceo'], caption: 'Kontrak setahun buat nyelamatin perusahaan keluarga, gimana kalau ternyata beneran jatuh cinta?' },
+  { id: 'v12', title: 'Cinderella Versi Shanghai', category: 'romance', likes: 5100, comments: 132, city: 'Tangerang', isNew: false, hashtags: ['dracin','romance'], caption: 'Seorang barista biasa ketemu pewaris konglomerat di malam paling nggak biasa.' },
+  { id: 'v13', title: 'Naga Langit Terakhir', category: 'fantasi', likes: 4700, comments: 121, city: 'Jakarta', isNew: false, hashtags: ['dracin','fantasi','aksi'], caption: 'Penjaga terakhir sebuah klan kuno harus memilih antara takdir dan cinta.' },
+  { id: 'v14', title: 'Drama Rumah Tangga Palsu', category: 'keluarga', likes: 4300, comments: 98, city: 'Depok', isNew: false, hashtags: ['dracin','keluarga','komedi'], caption: 'Pura-pura jadi keluarga bahagia di depan investor, aslinya berantakan total.' },
+  { id: 'v15', title: 'Sahabat Jadi Cinta', category: 'romance', likes: 4000, comments: 109, city: 'Jakarta', isNew: true, hashtags: ['dracin','romance'], caption: 'Sepuluh tahun temenan, satu pengakuan bikin semuanya berubah.' },
+  { id: 'v16', title: 'Detektif Cantik Pembasmi Mafia', category: 'misteri', likes: 3800, comments: 87, city: 'Bekasi', isNew: false, hashtags: ['dracin','misteri','aksi'], caption: 'Detektif termuda kepolisian menyamar demi membongkar jaringan mafia terbesar kota.' },
+];
+
+const DEFAULT_COMMENTS = [
+  { name: 'Rani_', time: '2 jam lalu', text: 'Scene episode 5 bikin baper parah astaga 😭' },
+  { name: 'dimasfilms', time: '5 jam lalu', text: 'Lagi rame banget nih di grup, akhirnya nonton juga' },
+  { name: 'ayu.k', time: '1 hari lalu', text: 'Kapan episode selanjutnya upload min?' },
+];
+
+function fmtNum(n) {
+  if (n >= 1000) {
+    const v = (n / 1000).toFixed(1).replace(/\.0$/, '');
+    return v.replace('.', ',') + ' rb';
+  }
+  return String(n);
+}
+
+class Component extends DCLogic {
+  state = {
+    screen: 'home',
+    activeCategory: 'romance',
+    user: null,
+    liked: {},
+    currentVideoId: 'v1',
+    commentSheetOpen: false,
+    loginModalOpen: false,
+    pendingLikeId: null,
+    authTab: 'masuk',
+    newCommentText: '',
+    comments: DEFAULT_COMMENTS,
+  };
+
+  go(screen) { this.setState({ screen, commentSheetOpen: false }); }
+
+  makeVideoView(v, thumbKeySuffix) {
+    const liked = !!this.state.liked[v.id];
+    const catObj = CATEGORIES.find(c => c.slug === v.category);
+    return {
+      ...v,
+      thumbSrc: './assets/thumbs/' + v.id + '.jpg',
+      thumbId: 'thumb-' + v.id,
+      thumbId2: 'thumb2-' + v.id,
+      thumbId3: 'thumb3-' + v.id,
+      thumbId4: 'thumb4-' + v.id,
+      likesLabel: fmtNum(v.likes + (liked ? 1 : 0)),
+      commentsLabel: fmtNum(v.comments),
+      categoryLabel: catObj ? catObj.label : '',
+      heartColor: liked ? 'var(--color-accent)' : 'var(--color-neutral-500)',
+      hashtagTags: v.hashtags,
+      open: () => this.setState({ screen: 'watch', currentVideoId: v.id, commentSheetOpen: false }),
+      toggleLike: (e) => { e.stopPropagation(); this.toggleLike(v.id); },
+    };
+  }
+
+  toggleLike(id) {
+    if (!this.state.user) { this.setState({ loginModalOpen: true, pendingLikeId: id }); return; }
+    this.setState(s => ({ liked: { ...s.liked, [id]: !s.liked[id] } }));
+  }
+
+  renderVals() {
+    const s = this.state;
+    const isWatch = s.screen === 'watch';
+    const sortedByLikes = [...VIDEOS].sort((a, b) => b.likes - a.likes);
+    const populer = sortedByLikes.slice(0, 12).map(v => this.makeVideoView(v));
+    const terbaru = [...VIDEOS].reverse().slice(0, 12).map(v => this.makeVideoView(v));
+    const cityName = (s.user && s.user.city) || 'Jakarta';
+    const byCity = VIDEOS.filter(v => v.city === cityName).slice(0, 8).map(v => this.makeVideoView(v));
+    const categoryVideos = VIDEOS.filter(v => v.category === s.activeCategory).map(v => this.makeVideoView(v));
+    const activeCatObj = CATEGORIES.find(c => c.slug === s.activeCategory) || CATEGORIES[0];
+    const currentVideoRaw = VIDEOS.find(v => v.id === s.currentVideoId) || VIDEOS[0];
+    const currentVideo = this.makeVideoView(currentVideoRaw);
+
+    const categories = CATEGORIES.map(c => ({
+      ...c,
+      select: () => this.setState({ activeCategory: c.slug, screen: 'kategori' }),
+      isActive: c.slug === s.activeCategory,
+      bg: c.slug === s.activeCategory ? 'var(--color-accent)' : 'transparent',
+      color: c.slug === s.activeCategory ? 'var(--color-bg)' : 'var(--color-text)',
+      borderColor: c.slug === s.activeCategory ? 'var(--color-accent)' : 'var(--color-divider)',
+    }));
+
+    const comments = s.comments.map(cm => ({ ...cm, initial: cm.name.slice(0, 1).toUpperCase() }));
+
+    return {
+      screen: s.screen,
+      isHome: s.screen === 'home',
+      isKategori: s.screen === 'kategori',
+      isProfil: s.screen === 'profil',
+      isMasuk: s.screen === 'masuk',
+      isWatch,
+      showHeader: !isWatch,
+      contentPadBottom: isWatch ? '0px' : '76px',
+      showCity: true,
+      city: cityName,
+      user: s.user,
+      notUser: !s.user,
+      userInitial: s.user ? s.user.name.slice(0, 1).toUpperCase() : '',
+      featured: VIDEOS[0],
+      populer, terbaru, byCity, categoryVideos, categories,
+      activeCategoryLabel: activeCatObj.label,
+      currentVideo,
+      cityOptions: CITY_OPTIONS,
+      comments,
+      newCommentText: s.newCommentText,
+      commentSheetOpen: s.commentSheetOpen,
+      loginModalOpen: s.loginModalOpen,
+      authIsMasuk: s.authTab === 'masuk',
+      authIsDaftar: s.authTab === 'daftar',
+      authSubmitLabel: s.authTab === 'masuk' ? 'Masuk' : 'Daftar sekarang',
+      homeColor: s.screen === 'home' ? 'var(--color-accent)' : 'var(--color-text)',
+      kategoriColor: s.screen === 'kategori' ? 'var(--color-accent)' : 'var(--color-text)',
+      profilColor: s.screen === 'profil' ? 'var(--color-accent)' : 'var(--color-text)',
+
+      goHome: () => this.go('home'),
+      goProfil: () => this.setState({ screen: s.user ? 'profil' : 'masuk' }),
+      goProfilNav: () => this.setState({ screen: s.user ? 'profil' : 'masuk' }),
+      goKategoriNav: () => this.go('kategori'),
+      goMasuk: () => this.setState({ screen: 'masuk', loginModalOpen: false }),
+      goWatchFeatured: () => this.setState({ screen: 'watch', currentVideoId: VIDEOS[0].id }),
+      toggleCurrentLike: () => this.toggleLike(currentVideoRaw.id),
+      openComments: () => this.setState({ commentSheetOpen: true }),
+      closeComments: () => this.setState({ commentSheetOpen: false }),
+      setNewComment: (e) => this.setState({ newCommentText: e.target.value }),
+      submitComment: () => {
+        if (!s.newCommentText.trim()) return;
+        this.setState(st => ({ comments: [{ name: st.user.name, time: 'Baru saja', text: st.newCommentText }, ...st.comments], newCommentText: '' }));
+      },
+      closeLoginModal: () => this.setState({ loginModalOpen: false }),
+      confirmLoginModal: () => this.setState({ loginModalOpen: false, screen: 'masuk' }),
+      setTabMasuk: () => this.setState({ authTab: 'masuk' }),
+      setTabDaftar: () => this.setState({ authTab: 'daftar' }),
+      doLogin: () => this.setState({ user: { name: 'Sarah Amelia', city: 'Jakarta', email: 'sarah.amelia@gmail.com' }, screen: 'home' }),
+      doLogout: () => this.setState({ user: null, screen: 'home' }),
+      setProfileCity: (e) => this.setState(st => ({ user: { ...st.user, city: e.target.value } })),
+    };
+  }
+}
+
+</script>
+</body>
+</html>
