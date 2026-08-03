@@ -1,0 +1,229 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #f3f2f2;
+  --color-surface: #eae9e9;
+  --color-text: #201e1d;
+  --color-accent: #ec3013;
+  --color-accent-600: #dd2b0f;
+  --color-accent-700: #ae1800;
+  --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
+  --color-neutral-100: #f8f4f4;
+  --color-neutral-400: #bab6b6;
+  --color-neutral-500: #9b9797;
+  --color-neutral-600: #7d7979;
+  --color-neutral-700: #605d5d;
+  --color-neutral-800: #444141;
+  --color-neutral-900: #2d2b2b;
+  --font-heading: "Archivo", system-ui, sans-serif;
+  --font-body: "Archivo", system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-text);
+  --font-sans: var(--font-body);
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--color-accent-600);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.phone-shell {
+  width: 100%;
+  max-width: 480px;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: var(--color-bg);
+  border-left: 2px solid var(--color-divider);
+  border-right: 2px solid var(--color-divider);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--color-text);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-600);
+}
+
+.btn-secondary {
+  border-color: var(--color-divider);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  padding: 3px 10px;
+}
+
+.tag-accent {
+  background: #fff2ef;
+  color: #7c1405;
+}
+
+.tag-outline {
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+}
+
+.text-muted {
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.portrait-card {
+  aspect-ratio: 9 / 16;
+  background: var(--color-neutral-900);
+  overflow: hidden;
+  position: relative;
+}
+
+.portrait-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.bottom-nav {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  border-top: 2px solid var(--color-divider);
+  background: var(--color-bg);
+  z-index: 20;
+}
+
+.bottom-nav a,
+.bottom-nav button {
+  flex: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 0;
+  color: var(--color-text);
+  font-size: 11px;
+}
+
+.bottom-nav .active {
+  color: var(--color-accent);
+}
+
+.seg {
+  display: flex;
+  border: 1px solid var(--color-divider);
+  overflow: hidden;
+}
+
+.seg button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  padding: 10px;
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-weight: 800;
+}
+
+.seg button.active {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
