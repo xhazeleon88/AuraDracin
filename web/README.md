@@ -28,25 +28,32 @@ Open http://localhost:3000
 - Email: `admin@auradracin.com`
 - Password: `admin123456`
 
-## DramaBos API
+## DramaBuzz / DramaBos API
 
-1. Get a key from https://dramabos.live
-2. Set in `.env`:
+Docs: https://dramabos.live/docs  
+Gateway: https://api.dramabuzz.sbs
 
 ```env
-DRAMABOS_API_KEY=your_token_here
-DRAMABOS_DEFAULT_PROVIDER=starshort
+DRAMABOS_API_KEY=your_access_code
+DRAMABOS_BASE_URL=https://api.dramabuzz.sbs
+DRAMABOS_DEFAULT_PROVIDER=reelshort
 DRAMABOS_LANG=id
 ```
 
-Proxy endpoints:
+Implemented API categories:
 
-- `GET /api/dramabos/feed?type=trending|latest`
-- `GET /api/dramabos/search?q=ceo`
-- `GET /api/dramabos/detail?provider=starshort&id=...`
-- `GET /api/dramabos/play?provider=starshort&id=...&ep=1`
+| Category | Route |
+|----------|-------|
+| Provider Status | `GET /api/dramabos/status` |
+| Feed & Trending | `GET /api/dramabos/feed?type=trending\|latest` |
+| Search | `GET /api/dramabos/search?q=ceo&provider=reelshort` |
+| Genre & Category | `GET /api/dramabos/genre?type=romance&provider=goodshort` |
+| Drama detail | `GET /api/dramabos/detail?provider=reelshort&id=...` |
+| Streaming | `GET /api/dramabos/play?provider=goodshort&id=...&ep=1` |
+| Download & CDN | `GET /api/dramabos/download?provider=goodshort&id=...` |
 
-Watch Dramabos titles at `/drama/[provider]/[id]?ep=1`.
+Homepage loads ~50 titles from **ReelShort + GoodShort**.  
+Watch at `/drama/[provider]/[id]?ep=1`.
 
 ## Stack
 

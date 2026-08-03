@@ -5,9 +5,9 @@ import { SearchBar } from "@/components/home/SearchBar";
 import { VideoCard } from "@/components/video/VideoCard";
 import { CATEGORIES } from "@/lib/constants";
 import {
+  getHomepageCatalog,
   getLatest,
   getStatus,
-  getTrending,
   searchDramas,
 } from "@/lib/dramabos";
 import { auth } from "@/lib/auth";
@@ -30,13 +30,20 @@ export default async function HomePage({
   const city = session?.user?.city || "Jakarta";
   const status = await getStatus();
 
-  const [trending, latest, localPopular, localLatest, cityVideos] = await Promise.all([
-    q ? searchDramas(q) : getTrending(),
-    getLatest(),
-    listPopularLocal(12),
-    listLocalVideos(12),
-    listCityPopular(city, 10),
-  ]);
+  const [catalog, latestRs, latestGs, localPopular, localLatest, cityVideos] =
+    await Promise.all([
+      q ? searchDramas(q, "reelshort") : getHomepageCatalog(50),
+      getLatest("reelshort"),
+      getLatest("goodshort"),
+      listPopularLocal(12),
+      listLocalVideos(12),
+      listCityPopular(city, 10),
+    ]);
+
+  const trending = catalog;
+  const latest = [...latestRs.slice(0, 8), ...latestGs.slice(0, 8)];
+  const reelshortOnly = catalog.filter((c) => c.provider === "reelshort").slice(0, 25);
+  const goodshortOnly = catalog.filter((c) => c.provider === "goodshort").slice(0, 25);
 
   const featured =
     trending[0] || (localPopular[0] ? toDramaCard(localPopular[0]) : undefined);
@@ -51,13 +58,16 @@ export default async function HomePage({
       {status.mode === "demo" ? (
         <div className="border-b-2 border-[var(--color-divider)] bg-[#fff2ef] px-4 py-2.5 text-[12px] text-[#7c1405]">
           <strong>Mode demo DramaBos.</strong> {status.reason}{" "}
-          <a href="https://dramabos.live" target="_blank" rel="noreferrer">
-            Ambil API key →
+          <a href="https://api.dramabuzz.sbs" target="_blank" rel="noreferrer">
+            Set kode akses →
           </a>
         </div>
       ) : (
         <div className="border-b-2 border-[var(--color-divider)] bg-emerald-50 px-4 py-2.5 text-[12px] text-emerald-800">
-          Live feed DramaBos · provider <strong>{status.provider}</strong>
+          Live DramaBuzz · {catalog.length} judul · ReelShort + GoodShort ·{" "}
+          <a href="https://dramabos.live/docs" target="_blank" rel="noreferrer">
+            docs
+          </a>
         </div>
       )}
 
@@ -88,23 +98,35 @@ export default async function HomePage({
         title="🔥 Lagi Populer"
         subtitle={
           q
-            ? `Hasil pencarian “${q}” dari DramaBos`
-            : "Yang paling hits dari DramaBos minggu ini"
+            ? `Hasil pencarian “${q}” dari DramaBuzz`
+            : "Mix ~50 judul ReelShort + GoodShort"
         }
-        items={trending.slice(0, 16)}
+        items={trending.slice(0, 50)}
+      />
+
+      <HorizontalRail
+        title="🎬 ReelShort"
+        subtitle={`${reelshortOnly.length} drama dari ReelShort`}
+        items={reelshortOnly}
+      />
+
+      <HorizontalRail
+        title="📺 GoodShort"
+        subtitle={`${goodshortOnly.length} drama dari GoodShort`}
+        items={goodshortOnly}
       />
 
       <section className="border-t-2 border-[var(--color-divider)] py-5">
         <div className="px-4 pb-1">
           <h3 className="text-[19px]">🆕 Terbaru</h3>
-          <p className="text-muted m-0 text-xs">Upload lokal + update DramaBos</p>
+          <p className="text-muted m-0 text-xs">Update terbaru + upload lokal</p>
         </div>
         <div className="grid grid-cols-2 gap-3 px-4 pt-3.5">
-          {[...latest.slice(0, 4).map((d) => ({ ...d })), ...localLatest.map(toDramaCard)]
-            .slice(0, 8)
+          {[...latest.slice(0, 8), ...localLatest.map(toDramaCard)]
+            .slice(0, 12)
             .map((item) => (
               <VideoCard
-                key={`grid-${item.source}-${item.id}`}
+                key={`grid-${item.source}-${item.provider}-${item.id}`}
                 item={item}
                 widthClass="w-full"
               />

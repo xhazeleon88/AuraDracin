@@ -12,12 +12,14 @@ export default async function CategoryPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [remote, local] = await Promise.all([
-    getByGenre(genreQueryForCategory(slug)),
+  const genre = genreQueryForCategory(slug);
+  const [remoteRs, remoteGs, local] = await Promise.all([
+    getByGenre(genre, "reelshort"),
+    getByGenre(genre, "goodshort"),
     listByCategory(slug),
   ]);
 
-  const items = [...remote, ...local.map(toDramaCard)];
+  const items = [...remoteRs, ...remoteGs, ...local.map(toDramaCard)];
 
   return (
     <div className="pb-6">
