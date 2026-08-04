@@ -466,41 +466,64 @@ export async function getStream(
   const key = accessCode();
 
   if (provider === "goodshort") {
-    // Prefer chapters list (has cdn m3u8 per episode)
-    const chapterRes = await fetchJson(
-      withCode(`${host}/chapters/${encodeURIComponent(id)}?lang=${LANG === "id" ? "in" : LANG}`),
-    );
-    if (chapterRes.ok) {
-      const list = asArray(chapterRes.data);
+    // Prefer raw CDN URLs (acfs1) — tokenized Akamai links often 403 in browsers.
+    // API shape: { data: { bookId, episodes: [...] } }
+    const raw = await fetchJson(withCode(`${host}/rawurl/${encodeURIComponent(id)}`));
+    if (raw.ok) {
+      const payload =
+        raw.data && typeof raw.data === "object"
+          ? ((raw.data as Record<string, unknown>).data as Record<string, unknown>) ||
+            (raw.data as Record<string, unknown>)
+          : {};
+      const episodes = asArray(payload.episodes || payload);
       const target =
-        list.find((row) => (pickNumber(row, ["index"]) ?? -1) + 1 === ep) || list[ep - 1];
-      if (target) {
-        const url =
-          pickString(target, ["cdn", "url", "playUrl"]) ||
-          pickString((asArray(target.cdnList)[0] || {}) as Record<string, unknown>, [
-            "url",
-            "cdn",
-            "filePath",
-          ]);
-        if (url) {
-          return { url, quality: "720p", type: url.includes(".m3u8") ? "hls" : "mp4" };
-        }
+        episodes.find((row) => (pickNumber(row, ["index"]) ?? -1) + 1 === ep) ||
+        episodes[ep - 1];
+      const videos = asArray(target?.allVideos || target?.videos);
+      const best =
+        videos.find((v) => pickString(v, ["type", "quality"]).includes("720")) ||
+        videos.find((v) => pickString(v, ["type", "quality"]).includes("540")) ||
+        videos[0];
+      const url =
+        pickString((best || {}) as Record<string, unknown>, ["rawUrl", "filePath", "url"]) ||
+        pickString((target || {}) as Record<string, unknown>, ["m3u8", "cdn", "url"]);
+      // Prefer acfs1 / non-Akamai. Skip goodbos.online/hls wrappers (need cookies).
+      if (
+        url &&
+        !url.includes("v2-akm.goodreels.com") &&
+        !url.includes("v3-akm.goodreels.com") &&
+        !url.includes("goodbos.online/hls/")
+      ) {
+        return {
+          url,
+          quality: pickString((best || {}) as Record<string, unknown>, ["type", "quality"]) || "720p",
+          type: url.includes(".m3u8") ? "hls" : "mp4",
+        };
       }
     }
 
-    // Download/CDN: batchload / rawurl
     const batch = await fetchJson(
       withCode(`${host}/batchload/${encodeURIComponent(id)}?lang=${LANG === "id" ? "in" : LANG}`),
     );
     if (batch.ok) {
-      const episodes = asArray(batch.data);
+      const payload =
+        batch.data && typeof batch.data === "object"
+          ? ((batch.data as Record<string, unknown>).data as Record<string, unknown>) ||
+            (batch.data as Record<string, unknown>)
+          : {};
+      const episodes = asArray(payload.episodes || payload);
       const target = episodes[ep - 1];
       if (target) {
         const videos = asArray(target.videos || target.allVideos || target.multiVideos);
         const best =
           videos.find((v) => pickString(v, ["type", "quality"]).includes("720")) || videos[0];
-        const url = pickString(best || target, ["filePath", "rawUrl", "url", "cdn"]);
-        if (url) {
+        const url = pickString(best || target, ["rawUrl", "filePath", "url", "cdn"]);
+        if (
+          url &&
+          !url.includes("v2-akm.goodreels.com") &&
+          !url.includes("v3-akm.goodreels.com") &&
+          !url.includes("goodbos.online/hls/")
+        ) {
           return {
             url,
             quality: pickString(best || {}, ["type", "quality"]) || undefined,
@@ -510,20 +533,31 @@ export async function getStream(
       }
     }
 
-    const raw = await fetchJson(withCode(`${host}/rawurl/${encodeURIComponent(id)}`));
-    if (raw.ok) {
-      const episodes = asArray(raw.data);
-      const target = episodes[ep - 1];
-      const videos = asArray(target?.allVideos || target?.videos);
-      const best = videos[0] || target;
-      const url = pickString((best || {}) as Record<string, unknown>, [
-        "rawUrl",
-        "filePath",
-        "url",
-        "cdn",
-      ]);
-      if (url) {
-        return { url, type: url.includes(".m3u8") ? "hls" : "mp4" };
+    // Last resort: chapter CDN (may be tokenized / 403)
+    const chapterRes = await fetchJson(
+      withCode(`${host}/chapters/${encodeURIComponent(id)}?lang=${LANG === "id" ? "in" : LANG}`),
+    );
+    if (chapterRes.ok) {
+      const payload =
+        chapterRes.data && typeof chapterRes.data === "object"
+          ? ((chapterRes.data as Record<string, unknown>).data as Record<string, unknown>) ||
+            (chapterRes.data as Record<string, unknown>)
+          : {};
+      const list = asArray(payload.list || payload);
+      const target =
+        list.find((row) => (pickNumber(row, ["index"]) ?? -1) + 1 === ep) || list[ep - 1];
+      if (target) {
+        const url =
+          pickString(target, ["cdn", "url", "playUrl"]) ||
+          pickString((asArray(target.cdnList)[0] || {}) as Record<string, unknown>, [
+            "videoPath",
+            "url",
+            "cdn",
+            "filePath",
+          ]);
+        if (url) {
+          return { url, quality: "720p", type: url.includes(".m3u8") ? "hls" : "mp4" };
+        }
       }
     }
   } else {
@@ -556,7 +590,13 @@ export async function getStream(
   }
 
   void key;
-  return getDemoStream(provider, id, ep);
+  // Do not fall back to demo cover images as "streams" — that looks like
+  // a broken player that only shows thumbnails.
+  const demo = getDemoStream(provider, id, ep);
+  if (demo.url && !/\.(jpg|jpeg|png|webp)(\?|$)/i.test(demo.url) && !demo.url.startsWith("/assets/")) {
+    return demo;
+  }
+  return null;
 }
 
 /** Download & CDN helper used by API route */

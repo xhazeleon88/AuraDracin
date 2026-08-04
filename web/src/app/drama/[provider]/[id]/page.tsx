@@ -65,11 +65,24 @@ export default async function DramaWatchPage({
 
       <div className="flex min-h-0 flex-1 items-center justify-center">
         <div className="relative h-full max-w-full aspect-[9/16] bg-[var(--color-neutral-800)]">
-          <HlsPlayer
-            src={stream?.url || detail.cover}
-            poster={detail.cover}
-            type={stream?.type || "mp4"}
-          />
+          {stream?.url ? (
+            <HlsPlayer
+              src={stream.url}
+              poster={detail.cover}
+              type={stream.type || "hls"}
+            />
+          ) : (
+            <div className="relative flex h-full w-full items-center justify-center bg-black">
+              <img
+                src={detail.cover}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover opacity-40"
+              />
+              <p className="relative z-10 px-4 text-center text-sm text-white">
+                Stream belum tersedia untuk episode ini.
+              </p>
+            </div>
+          )}
           <EngagementRail
             targetType="dramabos"
             targetId={targetId}
