@@ -4,6 +4,7 @@ const ALLOWED_HOST_SUFFIXES = [
   "crazymaplestudios.com",
   "goodreels.com",
   "goodbos.online",
+  "goodshort.com",
   "dramabuzz.sbs",
   "akamaized.net",
   "cloudfront.net",
@@ -16,6 +17,18 @@ function isAllowed(url: URL) {
   );
 }
 
+function shouldProxyUri(uri: string) {
+  // Keep data: AES keys and app-local key schemes as-is.
+  if (/^(data:|blob:|local:)/i.test(uri)) return false;
+  try {
+    const parsed = new URL(uri);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    // Relative segment paths should be proxied after absolutizing.
+    return true;
+  }
+}
+
 function rewritePlaylist(body: string, playlistUrl: URL, proxyBase: string) {
   return body
     .split("\n")
@@ -23,10 +36,14 @@ function rewritePlaylist(body: string, playlistUrl: URL, proxyBase: string) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) {
         // EXT-X-KEY / MAP URI="..."
-        return line.replace(/URI="([^"]+)"/g, (_, uri: string) => {
+        return line.replace(/URI="([^"]+)"/g, (full, uri: string) => {
+          if (!shouldProxyUri(uri)) return full;
           const absolute = new URL(uri, playlistUrl).toString();
           return `URI="${proxyBase}${encodeURIComponent(absolute)}"`;
         });
+      }
+      if (!shouldProxyUri(trimmed) && /^[a-z]+:/i.test(trimmed)) {
+        return trimmed;
       }
       const absolute = new URL(trimmed, playlistUrl).toString();
       return `${proxyBase}${encodeURIComponent(absolute)}`;
@@ -79,7 +96,8 @@ export async function GET(req: NextRequest) {
 
     if (isPlaylist) {
       const text = await upstream.text();
-      const proxyBase = `${req.nextUrl.origin}/api/stream/proxy?url=`;
+      // Relative proxy URLs so playlists work behind port-forwards / tunnels.
+      const proxyBase = `/api/stream/proxy?url=`;
       const rewritten = rewritePlaylist(text, target, proxyBase);
       return new NextResponse(rewritten, {
         headers: {
