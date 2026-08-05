@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse(vtt, {
       headers: {
         "Content-Type": "text/vtt; charset=utf-8",
-        "Cache-Control": "public, max-age=86400",
+        "Cache-Control": "public, max-age=300",
         "Access-Control-Allow-Origin": "*",
       },
     });

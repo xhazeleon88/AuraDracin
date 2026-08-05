@@ -252,41 +252,70 @@ export function HlsPlayer({
       return;
     }
 
-    // Lead so cues feel on-time vs dialogue (helps older cached VTTs too).
-    const LEAD = 1.25;
+    // Trust VTT times from Whisper (no baked lead). Tiny early bias only so
+    // text is readable slightly before the ear catches the word (~1 frame).
+    const OFFSET = 0.12;
     let raf = 0;
+    let alive = true;
+
+    const pickCue = (t: number): string => {
+      // Active cue
+      for (let i = 0; i < cues.length; i += 1) {
+        const c = cues[i];
+        if (t >= c.start && t < c.end) return c.text;
+      }
+      // Hold previous line across tiny gaps so sync feels continuous
+      for (let i = 0; i < cues.length - 1; i += 1) {
+        const cur = cues[i];
+        const next = cues[i + 1];
+        if (t >= cur.end && t < next.start && next.start - cur.end < 0.8) {
+          return cur.text;
+        }
+      }
+      return "";
+    };
+
     const sync = () => {
+      if (!alive) return;
       if (!subsOn) {
         setActiveText("");
         return;
       }
-      const t = (video.currentTime || 0) + LEAD;
-      // Prefer the latest cue that already started (handles overlaps better).
-      let hit: Cue | undefined;
-      for (let i = cues.length - 1; i >= 0; i -= 1) {
-        const c = cues[i];
-        if (t >= c.start && t < c.end) {
-          hit = c;
-          break;
-        }
-      }
-      setActiveText(hit?.text || "");
+      setActiveText(pickCue((video.currentTime || 0) + OFFSET));
     };
 
-    const onTime = () => {
+    const tick = () => {
+      sync();
+      if (alive && !video.paused && !video.ended) {
+        raf = requestAnimationFrame(tick);
+      }
+    };
+
+    const onPlay = () => {
       if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(sync);
+      raf = requestAnimationFrame(tick);
+    };
+    const onPause = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      sync();
     };
 
     sync();
-    video.addEventListener("timeupdate", onTime);
+    if (!video.paused) onPlay();
+    video.addEventListener("play", onPlay);
+    video.addEventListener("playing", onPlay);
+    video.addEventListener("pause", onPause);
     video.addEventListener("seeked", sync);
-    video.addEventListener("play", sync);
+    video.addEventListener("timeupdate", sync);
     return () => {
+      alive = false;
       if (raf) cancelAnimationFrame(raf);
-      video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("playing", onPlay);
+      video.removeEventListener("pause", onPause);
       video.removeEventListener("seeked", sync);
-      video.removeEventListener("play", sync);
+      video.removeEventListener("timeupdate", sync);
     };
   }, [cues, hasSubs, subsOn, src]);
 

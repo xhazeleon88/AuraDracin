@@ -7,12 +7,12 @@ import { translateManyToBahasa } from "./translate";
 
 const whisperBin = process.env.WHISPER_BIN || "/home/ubuntu/.local/bin/whisper";
 const dataDir = path.join(/*turbopackIgnore: true*/ process.cwd(), "data", "subtitles");
-/** Show cues this many seconds early to counter player/audio skew. */
-const CUE_LEAD_SEC = Number(process.env.SUBTITLE_CUE_LEAD_SEC || "1.5");
+/** Bump to invalidate old VTTs that had broken lead/skew baked in. */
+const CACHE_VERSION = "v3";
 
 function cacheId(provider: string, dramaId: string, episode: number) {
   return createHash("sha256")
-    .update(`${provider}:${dramaId}:${episode}`)
+    .update(`${CACHE_VERSION}:${provider}:${dramaId}:${episode}`)
     .digest("hex")
     .slice(0, 32);
 }
@@ -60,22 +60,39 @@ function toVttTime(seconds: number) {
 
 type WhisperSegment = { start: number; end: number; text: string };
 
+/**
+ * Keep Whisper timestamps as the source of truth (no global lead/skew).
+ * Only extend short cues toward the next cue so text doesn't flicker away.
+ */
 async function segmentsToBahasaVtt(segments: WhisperSegment[]) {
   const translated = await translateManyToBahasa(segments.map((s) => s.text.trim()));
-  // If Whisper's first speech is late vs picture (common with HLS probe delay),
-  // shift the whole timeline forward so cues line up with the player.
-  const firstStart = segments.find((s, i) => translated[i])?.start ?? 0;
-  const skew = firstStart > 2.5 ? Math.min(firstStart - 0.4, 18) : 0;
-  const lead = Number.isFinite(CUE_LEAD_SEC) ? Math.max(0, CUE_LEAD_SEC) : 1.5;
-
   const lines = ["WEBVTT", ""];
+  let cueIndex = 0;
+
   for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i];
     const text = (translated[i] || "").replace(/\s+/g, " ").trim();
     if (!text) continue;
-    const start = Math.max(0, seg.start - skew - lead);
-    const end = Math.max(start + 0.35, seg.end - skew - lead);
-    lines.push(String(i + 1));
+
+    const seg = segments[i];
+    const next = segments.slice(i + 1).find((s, j) => (translated[i + 1 + j] || "").trim());
+    let start = Math.max(0, seg.start);
+    let end = Math.max(start + 0.45, seg.end);
+
+    // Hold text until the next cue when the gap is small (feels more natural).
+    if (next) {
+      const gap = next.start - end;
+      if (gap > 0 && gap < 1.1) {
+        end = Math.max(end, next.start - 0.05);
+      } else {
+        end = Math.min(end + 0.35, next.start - 0.05);
+      }
+    } else {
+      end += 0.5;
+    }
+
+    if (!(end > start)) continue;
+    cueIndex += 1;
+    lines.push(String(cueIndex));
     lines.push(`${toVttTime(start)} --> ${toVttTime(end)}`);
     lines.push(text);
     lines.push("");
@@ -84,8 +101,7 @@ async function segmentsToBahasaVtt(segments: WhisperSegment[]) {
 }
 
 async function extractAudio(streamUrl: string, wavPath: string) {
-  // Cap at 4 minutes — enough for most short-drama episodes.
-  // Prefer the playlist start; genpts helps HLS timestamps stay stable.
+  // Most short-drama episodes are ~60–120s. Cap so Whisper finishes before timeout.
   const result = await run(
     "ffmpeg",
     [
@@ -96,16 +112,21 @@ async function extractAudio(streamUrl: string, wavPath: string) {
       "+genpts+discardcorrupt",
       "-i",
       streamUrl,
-      "-t",
-      "240",
       "-vn",
+      "-af",
+      "aresample=async=1:first_pts=0",
       "-ac",
       "1",
       "-ar",
       "16000",
+      "-t",
+      "150",
+      "-start_at_zero",
+      "-avoid_negative_ts",
+      "make_zero",
       wavPath,
     ],
-    120000,
+    90000,
   );
   if (result.code !== 0 || !fs.existsSync(wavPath)) {
     throw new Error(result.stderr || "ffmpeg gagal ekstrak audio");
@@ -113,14 +134,15 @@ async function extractAudio(streamUrl: string, wavPath: string) {
 }
 
 async function transcribe(wavPath: string, workDir: string): Promise<WhisperSegment[]> {
+  // tiny.en is better for English short-drama dialogue timing than multilingual tiny.
   const result = await run(
     whisperBin,
     [
       wavPath,
       "--model",
-      "tiny",
+      "tiny.en",
       "--language",
-      "English",
+      "en",
       "--task",
       "transcribe",
       "--output_format",
@@ -129,11 +151,15 @@ async function transcribe(wavPath: string, workDir: string): Promise<WhisperSegm
       workDir,
       "--fp16",
       "False",
+      "--condition_on_previous_text",
+      "False",
+      "--no_speech_threshold",
+      "0.45",
     ],
-    240000,
+    360000,
   );
   if (result.code !== 0) {
-    throw new Error(result.stderr || "whisper gagal");
+    throw new Error((result.stderr || result.stdout || "whisper gagal").slice(0, 400));
   }
   const base = path.basename(wavPath, path.extname(wavPath));
   const jsonPath = path.join(workDir, `${base}.json`);
@@ -166,7 +192,7 @@ export async function getBahasaSubtitles(opts: {
     .prepare(`SELECT vtt, status FROM subtitle_cache WHERE id = ?`)
     .get(id) as { vtt: string; status: string } | undefined;
   // Serve successful caches. status=error rows fall through and retry.
-  if (cached?.status === "ready" && cached.vtt.startsWith("WEBVTT")) {
+  if (cached?.status === "ready" && cached.vtt.startsWith("WEBVTT") && /\d{2}:\d{2}:\d{2}\.\d{3}\s+-->/.test(cached.vtt)) {
     return { vtt: cached.vtt, cached: true };
   }
 

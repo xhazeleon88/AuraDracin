@@ -35,7 +35,7 @@ export default async function DramaWatchPage({
     ? `/drama/${provider}/${encodeURIComponent(detail.id)}?ep=${nextEpisode.number}`
     : undefined;
   const subtitleUrl = stream?.url
-    ? `/api/subtitles?provider=${encodeURIComponent(provider)}&id=${encodeURIComponent(detail.id)}&ep=${episode}`
+    ? `/api/subtitles?provider=${encodeURIComponent(provider)}&id=${encodeURIComponent(detail.id)}&ep=${episode}&v=3`
     : undefined;
   // Warm subtitle cache in the background so the player gets cues sooner.
   if (stream?.url) {
