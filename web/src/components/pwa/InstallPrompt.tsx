@@ -111,10 +111,10 @@ export function InstallPrompt() {
           />
           <div>
             <h2 id="install-title" className="text-[18px] font-extrabold leading-tight">
-              Taruh Aura Dracin di HP kamu
+              Install Aura Dracin di HP kamu
             </h2>
             <p className="mt-1.5 text-[13px] text-[var(--color-neutral-700)]">
-              Biar nonton dracin tinggal buka icon-nya. Gak perlu cari-cari link lagi.
+              Biar nonton dracin tinggal buka dari home. Gak perlu cari-cari link lagi.
             </p>
           </div>
         </div>
@@ -132,8 +132,8 @@ export function InstallPrompt() {
             Skip dulu
           </button>
           <button type="button" className="btn btn-primary flex-1" onClick={install}>
-            <i className="fa-solid fa-plus" />
-            Pasang
+            <i className="fa-solid fa-download" />
+            Install
           </button>
         </div>
       </div>
