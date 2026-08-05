@@ -38,7 +38,7 @@ yarn-error.log*
 # local database & uploads
 /data/*.db
 /data/*.db-*
-/public/uploads/*
+/data/subtitles//public/uploads/*
 !/public/uploads/.gitkeep
 
 # vercel
