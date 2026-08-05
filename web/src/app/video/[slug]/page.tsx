@@ -43,13 +43,18 @@ export default async function LocalWatchPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-neutral-900)] text-[var(--color-neutral-100)]">
-      <Link
-        href="/"
-        className="icon-btn absolute left-1.5 top-1.5 z-20 text-white"
-        aria-label="Kembali"
-      >
-        <i className="fa-solid fa-chevron-left text-xl" />
-      </Link>
+      <div className="flex shrink-0 items-center gap-2 px-2 py-1.5">
+        <Link
+          href="/"
+          className="icon-btn !text-white hover:!text-white"
+          aria-label="Kembali"
+        >
+          <i className="fa-solid fa-chevron-left text-xl" />
+        </Link>
+        <span className="truncate text-[13px] font-semibold text-[var(--color-neutral-100)]">
+          {video.title}
+        </span>
+      </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center">
         <div className="relative h-full max-w-full aspect-[9/16] bg-[var(--color-neutral-800)]">

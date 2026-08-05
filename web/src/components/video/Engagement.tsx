@@ -75,32 +75,35 @@ export function EngagementRail({
 
   return (
     <>
-      <div className="absolute bottom-4 right-3 z-10 flex flex-col items-center gap-5 text-white">
-        <button type="button" className="flex flex-col items-center gap-1" onClick={toggleLike}>
-          <i
-            className="fa-solid fa-heart text-2xl"
-            style={{ color: liked ? "var(--color-accent)" : "white" }}
-          />
-          <span className="text-[11px]">{fmtNum(likes)}</span>
-        </button>
-        <button type="button" className="flex flex-col items-center gap-1" onClick={loadComments}>
-          <i className="fa-solid fa-comment text-[23px]" />
-          <span className="text-[11px]">{fmtNum(commentCount)}</span>
-        </button>
-        <button
-          type="button"
-          className="flex flex-col items-center gap-1"
-          onClick={async () => {
-            if (navigator.share) {
-              await navigator.share({ url: window.location.href, title: document.title });
-            } else {
-              await navigator.clipboard.writeText(window.location.href);
-            }
-          }}
-        >
-          <i className="fa-solid fa-share text-[21px]" />
-          <span className="text-[11px]">Bagikan</span>
-        </button>
+      {/* Sit above native video controls (~48px) so Bagikan never covers the scrubber */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-14 top-10 z-10 flex items-end justify-end pr-3">
+        <div className="pointer-events-auto flex flex-col items-center gap-5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+          <button type="button" className="flex flex-col items-center gap-1" onClick={toggleLike}>
+            <i
+              className="fa-solid fa-heart text-2xl"
+              style={{ color: liked ? "var(--color-accent)" : "white" }}
+            />
+            <span className="text-[11px]">{fmtNum(likes)}</span>
+          </button>
+          <button type="button" className="flex flex-col items-center gap-1" onClick={loadComments}>
+            <i className="fa-solid fa-comment text-[23px]" />
+            <span className="text-[11px]">{fmtNum(commentCount)}</span>
+          </button>
+          <button
+            type="button"
+            className="flex flex-col items-center gap-1"
+            onClick={async () => {
+              if (navigator.share) {
+                await navigator.share({ url: window.location.href, title: document.title });
+              } else {
+                await navigator.clipboard.writeText(window.location.href);
+              }
+            }}
+          >
+            <i className="fa-solid fa-share text-[21px]" />
+            <span className="text-[11px]">Bagikan</span>
+          </button>
+        </div>
       </div>
 
       {open ? (

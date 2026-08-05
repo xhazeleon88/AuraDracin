@@ -55,13 +55,19 @@ export default async function DramaWatchPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-neutral-900)] text-[var(--color-neutral-100)]">
-      <Link
-        href="/"
-        className="icon-btn absolute left-1.5 top-1.5 z-20 text-white"
-        aria-label="Kembali"
-      >
-        <i className="fa-solid fa-chevron-left text-xl" />
-      </Link>
+      {/* Keep back control outside the video so it never fights native fullscreen/PiP chrome */}
+      <div className="flex shrink-0 items-center gap-2 px-2 py-1.5">
+        <Link
+          href="/"
+          className="icon-btn !text-white hover:!text-white"
+          aria-label="Kembali"
+        >
+          <i className="fa-solid fa-chevron-left text-xl" />
+        </Link>
+        <span className="truncate text-[13px] font-semibold text-[var(--color-neutral-100)]">
+          {detail.title}
+        </span>
+      </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center">
         <div className="relative h-full max-w-full aspect-[9/16] bg-[var(--color-neutral-800)]">
@@ -118,19 +124,20 @@ export default async function DramaWatchPage({
           ))}
         </div>
         <div className="flex gap-2 overflow-x-auto pt-2">
-          {detail.episodes.slice(0, 24).map((item) => (
-            <Link
-              key={item.id}
-              href={`/drama/${provider}/${encodeURIComponent(detail.id)}?ep=${item.number}`}
-              className={`shrink-0 border px-3 py-1.5 text-xs ${
-                item.number === episode
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-white"
-                  : "border-[var(--color-neutral-700)] text-[var(--color-neutral-300)]"
-              }`}
-            >
-              Ep {item.number}
-            </Link>
-          ))}
+          {detail.episodes.slice(0, 24).map((item) => {
+            const active = item.number === episode;
+            return (
+              <Link
+                key={item.id}
+                href={`/drama/${provider}/${encodeURIComponent(detail.id)}?ep=${item.number}`}
+                className={`ep-chip shrink-0 border px-3 py-1.5 text-xs ${
+                  active ? "ep-chip-active" : "ep-chip-idle"
+                }`}
+              >
+                Ep {item.number}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </div>

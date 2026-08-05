@@ -227,3 +227,24 @@ h4 {
   background: var(--color-accent);
   color: var(--color-bg);
 }
+
+/* Episode chips — beat global `a { color: accent }` so selected text stays readable */
+.ep-chip {
+  color: var(--color-neutral-300);
+}
+
+.ep-chip:hover {
+  color: var(--color-neutral-100);
+}
+
+.ep-chip-idle {
+  border-color: var(--color-neutral-700);
+  color: var(--color-neutral-300);
+}
+
+.ep-chip-active,
+.ep-chip-active:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+}
