@@ -218,7 +218,18 @@ function asArray(input: unknown): Record<string, unknown>[] {
 function pickString(row: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = row[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "string" && value.trim()) {
+      return value
+        .replace(/<[^>]+>/g, "")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
     if (typeof value === "number") return String(value);
   }
   return "";
