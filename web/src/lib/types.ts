@@ -19,6 +19,7 @@ export type DramaCard = {
   episodeCount?: number;
   category?: CategorySlug | string;
   likes?: number;
+  views?: number;
   isNew?: boolean;
   source: "dramabos" | "local";
   slug?: string;

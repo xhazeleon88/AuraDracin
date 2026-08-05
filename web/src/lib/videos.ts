@@ -1,4 +1,5 @@
 import { getDb } from "./db";
+import { applyEngagementBaselines } from "./engagement";
 import type { DramaCard, LocalVideo } from "./types";
 
 type VideoRow = {
@@ -126,14 +127,17 @@ export function listCityPopularDramaRefs(
     .filter((row): row is { provider: string; id: string } => Boolean(row));
 }
 
-/** Add Aura user likes on top of provider API like/view counts. */
+/**
+ * Fill missing API likes/views with stable baselines, then add Aura user likes.
+ */
 export function mergeLocalLikes(cards: DramaCard[]): DramaCard[] {
   if (!cards.length) return cards;
+  const baselined = applyEngagementBaselines(cards);
   const db = getDb();
-  const targets = cards
+  const targets = baselined
     .filter((c) => c.source === "dramabos")
     .map((c) => `${c.provider}:${c.id}`);
-  if (!targets.length) return cards;
+  if (!targets.length) return baselined;
 
   const local = new Map<string, number>();
   const chunkSize = 200;
@@ -151,10 +155,10 @@ export function mergeLocalLikes(cards: DramaCard[]): DramaCard[] {
     for (const row of rows) local.set(row.target_id, row.c);
   }
 
-  return cards.map((card) => {
+  return baselined.map((card) => {
     if (card.source !== "dramabos") return card;
     const extra = local.get(`${card.provider}:${card.id}`) || 0;
-    if (!extra && card.likes) return card;
+    if (!extra) return card;
     return { ...card, likes: (card.likes || 0) + extra };
   });
 }
@@ -179,6 +183,7 @@ export function toDramaCard(video: LocalVideo): DramaCard {
     synopsis: video.description,
     category: video.category,
     likes: video.likeCount,
+    views: video.viewCount,
     source: "local",
     slug: video.slug,
   };

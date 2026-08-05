@@ -352,6 +352,16 @@ function normalizeCard(
       "hot_score",
       "hot",
     ]),
+    views: pickNumber(row, [
+      "viewCount",
+      "view_count",
+      "views",
+      "view",
+      "playCount",
+      "play_count",
+      "watchCount",
+      "watch_count",
+    ]),
     source: "dramabos",
   };
 }

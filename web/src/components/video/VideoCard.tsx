@@ -51,9 +51,15 @@ export function VideoCard({
         ) : null}
       </div>
       <div className="line-clamp-2 text-[13px] font-semibold leading-snug">{item.title}</div>
-      <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-neutral-500)]">
-        <i className="fa-solid fa-heart text-[13px] text-[var(--color-accent)]" />
-        <span>{fmtNum(item.likes || 0)}</span>
+      <div className="flex items-center gap-2 text-[11px] text-[var(--color-neutral-500)]">
+        <span className="inline-flex items-center gap-1">
+          <i className="fa-solid fa-eye text-[12px]" />
+          {fmtNum(item.views || 0)}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <i className="fa-solid fa-heart text-[12px] text-[var(--color-accent)]" />
+          {fmtNum(item.likes || 0)}
+        </span>
         {item.episodeCount ? <span>· {item.episodeCount} eps</span> : null}
       </div>
     </Link>

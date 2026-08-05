@@ -3,8 +3,11 @@ import { notFound } from "next/navigation";
 import { EngagementRail } from "@/components/video/Engagement";
 import { HlsPlayer } from "@/components/video/HlsPlayer";
 import { auth } from "@/lib/auth";
+import { fmtNum } from "@/lib/constants";
 import { getDb } from "@/lib/db";
 import { getDramaDetail, getStream } from "@/lib/dramabos";
+import { enrichDramaEngagement } from "@/lib/engagement";
+import { providerDisplayName } from "@/lib/studios";
 import { countLocalLikes, recordView } from "@/lib/videos";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +24,9 @@ export default async function DramaWatchPage({
   const episode = Math.max(1, Number(ep || 1) || 1);
   const session = await auth();
 
-  const detail = await getDramaDetail(provider, decodeURIComponent(id));
-  if (!detail) notFound();
+  const rawDetail = await getDramaDetail(provider, decodeURIComponent(id));
+  if (!rawDetail) notFound();
+  const detail = enrichDramaEngagement(rawDetail);
 
   const stream = await getStream(provider, detail.id, episode);
   const nextEpisode = detail.episodes.find((item) => item.number === episode + 1);
@@ -106,7 +110,7 @@ export default async function DramaWatchPage({
 
       <div className="shrink-0 space-y-2 border-t border-[var(--color-neutral-800)] px-4 py-3.5">
         <div className="flex items-center gap-2">
-          <span className="text-[13px] font-extrabold">@{detail.provider}</span>
+          <span className="text-[13px] font-extrabold">@{providerDisplayName(detail.provider)}</span>
           <span className="tag bg-[#fff2ef] text-[10px] text-[#7c1405]">
             {detail.category}
           </span>
@@ -115,6 +119,16 @@ export default async function DramaWatchPage({
           </span>
         </div>
         <div className="text-[15px] font-semibold">{detail.title}</div>
+        <div className="flex items-center gap-3 text-[12px] text-[var(--color-neutral-400)]">
+          <span className="inline-flex items-center gap-1.5">
+            <i className="fa-solid fa-eye" />
+            {fmtNum(detail.views || 0)} views
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <i className="fa-solid fa-heart text-[var(--color-accent)]" />
+            {fmtNum(combinedLikes)} likes
+          </span>
+        </div>
         <p className="m-0 line-clamp-3 text-[13px] text-[var(--color-neutral-400)]">
           {detail.synopsis}
         </p>
