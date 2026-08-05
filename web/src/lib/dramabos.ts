@@ -61,6 +61,11 @@ export const CATALOG_PROVIDERS = [
   "happyshort",
 ] as const;
 
+/** Featured studio rails — always target ~25 live titles each on the homepage. */
+export const FEATURED_STUDIO_PROVIDERS = ["reelshort", "goodshort"] as const;
+
+const HOME_PAGE_SIZE = 40;
+
 const DRAKULA_PROVIDERS = new Set([
   "starshort",
   "fundrama",
@@ -535,7 +540,7 @@ export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promis
   } else {
     // Prefer full catalog endpoints (with covers) over /hot word lists.
     paths = [
-      withCode(`${base}/home?lang=${lang}&channelId=-1&page=${page}&size=24`),
+      withCode(`${base}/home?lang=${lang}&channelId=-1&page=${page}&size=${HOME_PAGE_SIZE}`),
       withCode(`${base}/trending?lang=${lang}`),
       withCode(`${base}/api/trending?lang=${lang}`),
       withCode(`${base}/popular?lang=${lang}`),
@@ -562,10 +567,10 @@ export async function getLatest(provider = DEFAULT_PROVIDER, page = 1): Promise<
   const base = providerBase(provider);
   const lang = feedLang(provider);
   const paths = [
-    withCode(`${base}/home?lang=${lang}&channelId=563&page=${page}&size=24`),
-    withCode(`${base}/home?lang=${lang}&channelId=-1&page=${page}&size=24`),
+    withCode(`${base}/home?lang=${lang}&channelId=563&page=${page}&size=${HOME_PAGE_SIZE}`),
+    withCode(`${base}/home?lang=${lang}&channelId=-1&page=${page}&size=${HOME_PAGE_SIZE}`),
     withCode(`${base}/api/list?lang=${lang}&page=${page}`),
-    withCode(`${base}/nexthome?page=${page}&page_size=24&lang=${lang}`),
+    withCode(`${base}/nexthome?page=${page}&page_size=${HOME_PAGE_SIZE}&lang=${lang}`),
     withCode(`${base}/api/search?q=new&lang=${lang}&page=${page}`),
     withCode(`${base}/search?q=new&lang=${lang}&page=${page}`),
     withCode(`${base}/search?keyword=new&lang=${lang}&page=${page}`),
@@ -577,6 +582,39 @@ export async function getLatest(provider = DEFAULT_PROVIDER, page = 1): Promise<
     if (cards.length) return localizeCards(cards);
   }
   return getTrending(provider, page);
+}
+
+/**
+ * Build a studio rail from live API only (no local/demo seeds).
+ * Featured studios (ReelShort / GoodShort) always pull multiple feed pages +
+ * thematic searches until we have a full ~25-title rail. Larger limits (studio
+ * pages) use the same multi-source fill for every provider.
+ */
+export async function getProviderRail(provider: string, limit = 25): Promise<DramaCard[]> {
+  const featured = (FEATURED_STUDIO_PROVIDERS as readonly string[]).includes(provider);
+  const aggressive = featured || limit > 25;
+
+  if (!aggressive) {
+    const [trend, latest] = await Promise.all([
+      getTrending(provider, 1).catch(() => [] as DramaCard[]),
+      getLatest(provider, 1).catch(() => [] as DramaCard[]),
+    ]);
+    return dedupe([...trend, ...latest]).slice(0, Math.max(1, limit));
+  }
+
+  const pages = featured ? [1, 2, 3] : [1, 2];
+  const queries = featured
+    ? ["love story", "ceo billionaire", "revenge", "baby family", "romance love", "contract wife"]
+    : ["love story", "ceo billionaire", "romance love"];
+
+  const feedJobs = pages.flatMap((page) => [
+    getTrending(provider, page).catch(() => [] as DramaCard[]),
+    getLatest(provider, page).catch(() => [] as DramaCard[]),
+  ]);
+  const searchJobs = queries.map((q) => searchDramas(q, provider).catch(() => [] as DramaCard[]));
+
+  const batches = await Promise.all([...feedJobs, ...searchJobs]);
+  return dedupe(batches.flat()).slice(0, Math.max(1, limit));
 }
 
 function interleaveBatches(batches: DramaCard[][]): DramaCard[] {

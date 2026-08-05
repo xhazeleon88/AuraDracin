@@ -7,9 +7,9 @@ import { VideoCard } from "@/components/video/VideoCard";
 import { CATEGORIES } from "@/lib/constants";
 import {
   CATALOG_PROVIDERS,
+  FEATURED_STUDIO_PROVIDERS,
   getHomepageCatalog,
-  getLatest,
-  getTrending,
+  getProviderRail,
   searchCatalog,
 } from "@/lib/dramabos";
 import { auth } from "@/lib/auth";
@@ -87,14 +87,13 @@ export default async function HomePage({
     );
   }
 
+  // All homepage titles come from DramaBuzz/GoodBos APIs — never local demo seeds.
+  // Featured studios (ReelShort + GoodShort) get a dedicated 25-title rail each.
   const [catalogRaw, ...providerBatches] = await Promise.all([
     getHomepageCatalog(240),
     ...CATALOG_PROVIDERS.map(async (provider) => {
-      const [trend, latest] = await Promise.all([
-        getTrending(provider).catch(() => []),
-        getLatest(provider).catch(() => []),
-      ]);
-      return { provider, items: mergeLocalLikes([...trend, ...latest]) };
+      const items = await getProviderRail(provider, 25).catch(() => []);
+      return { provider, items: mergeLocalLikes(items) };
     }),
   ]);
 
@@ -104,9 +103,16 @@ export default async function HomePage({
     providerBatches.flatMap((batch) => batch.items),
   ).slice(0, 36);
 
-  // Keep dedicated per-studio rails (e.g. ReelShort / GoodShort ~25 each)
-  // even when the interleaved catalog is dominated by other sources.
-  const providerRails = providerBatches
+  // ReelShort / GoodShort first, then remaining live studio rails.
+  const featuredSet = new Set<string>(FEATURED_STUDIO_PROVIDERS);
+  const orderedBatches = [
+    ...FEATURED_STUDIO_PROVIDERS.map((provider) =>
+      providerBatches.find((batch) => batch.provider === provider),
+    ),
+    ...providerBatches.filter((batch) => !featuredSet.has(batch.provider)),
+  ].filter(Boolean) as typeof providerBatches;
+
+  const providerRails = orderedBatches
     .map((batch) => ({
       provider: batch.provider,
       items: batch.items.slice(0, 25),

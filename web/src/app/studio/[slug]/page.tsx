@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { VideoCard } from "@/components/video/VideoCard";
-import { getLatest, getTrending } from "@/lib/dramabos";
+import { getProviderRail } from "@/lib/dramabos";
 import { getStudioProfile, isKnownStudio, listStudioProfiles } from "@/lib/studios";
 import { mergeLocalLikes } from "@/lib/videos";
 
@@ -17,19 +17,7 @@ export default async function StudioDetailPage({
   if (!isKnownStudio(id)) notFound();
 
   const studio = getStudioProfile(id);
-  const [trendingRaw, latestRaw] = await Promise.all([
-    getTrending(id).catch(() => []),
-    getLatest(id).catch(() => []),
-  ]);
-  const trending = mergeLocalLikes(trendingRaw);
-  const latest = mergeLocalLikes(latestRaw);
-  const seen = new Set<string>();
-  const catalog = [...trending, ...latest].filter((item) => {
-    const key = `${item.provider}:${item.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const catalog = mergeLocalLikes(await getProviderRail(id, 48).catch(() => []));
 
   const hero = catalog[0]?.cover || "";
   const others = listStudioProfiles().filter((s) => s.id !== id).slice(0, 8);
