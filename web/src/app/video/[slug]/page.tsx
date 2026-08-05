@@ -77,7 +77,7 @@ export default async function LocalWatchPage({
           </span>
         </div>
         <div className="text-[15px] font-semibold">{video.title}</div>
-        <p className="m-0 line-clamp-3 text-[13px] text-[var(--color-neutral-400)]">
+        <p className="m-0 whitespace-pre-line text-[13px] leading-relaxed text-[var(--color-neutral-400)]">
           {video.description}
         </p>
         <div className="flex flex-wrap gap-1.5 pt-1">
