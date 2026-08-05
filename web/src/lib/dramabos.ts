@@ -351,11 +351,6 @@ function normalizeCard(
       "scoreShow",
       "hot_score",
       "hot",
-      "viewCount",
-      "view_count",
-      "views",
-      "view",
-      "playCount",
     ]),
     source: "dramabos",
   };
