@@ -3,10 +3,12 @@ import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import { getDb } from "./db";
-import { translateToBahasa } from "./translate";
+import { translateManyToBahasa } from "./translate";
 
 const whisperBin = process.env.WHISPER_BIN || "/home/ubuntu/.local/bin/whisper";
 const dataDir = path.join(/*turbopackIgnore: true*/ process.cwd(), "data", "subtitles");
+/** Show cues this many seconds early to counter player/audio skew. */
+const CUE_LEAD_SEC = Number(process.env.SUBTITLE_CUE_LEAD_SEC || "1.5");
 
 function cacheId(provider: string, dramaId: string, episode: number) {
   return createHash("sha256")
@@ -59,13 +61,22 @@ function toVttTime(seconds: number) {
 type WhisperSegment = { start: number; end: number; text: string };
 
 async function segmentsToBahasaVtt(segments: WhisperSegment[]) {
+  const translated = await translateManyToBahasa(segments.map((s) => s.text.trim()));
+  // If Whisper's first speech is late vs picture (common with HLS probe delay),
+  // shift the whole timeline forward so cues line up with the player.
+  const firstStart = segments.find((s, i) => translated[i])?.start ?? 0;
+  const skew = firstStart > 2.5 ? Math.min(firstStart - 0.4, 18) : 0;
+  const lead = Number.isFinite(CUE_LEAD_SEC) ? Math.max(0, CUE_LEAD_SEC) : 1.5;
+
   const lines = ["WEBVTT", ""];
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
-    const text = (await translateToBahasa(seg.text.trim())).replace(/\s+/g, " ").trim();
+    const text = (translated[i] || "").replace(/\s+/g, " ").trim();
     if (!text) continue;
+    const start = Math.max(0, seg.start - skew - lead);
+    const end = Math.max(start + 0.35, seg.end - skew - lead);
     lines.push(String(i + 1));
-    lines.push(`${toVttTime(seg.start)} --> ${toVttTime(seg.end)}`);
+    lines.push(`${toVttTime(start)} --> ${toVttTime(end)}`);
     lines.push(text);
     lines.push("");
   }
@@ -74,12 +85,15 @@ async function segmentsToBahasaVtt(segments: WhisperSegment[]) {
 
 async function extractAudio(streamUrl: string, wavPath: string) {
   // Cap at 4 minutes — enough for most short-drama episodes.
+  // Prefer the playlist start; genpts helps HLS timestamps stay stable.
   const result = await run(
     "ffmpeg",
     [
       "-y",
       "-loglevel",
       "error",
+      "-fflags",
+      "+genpts+discardcorrupt",
       "-i",
       streamUrl,
       "-t",

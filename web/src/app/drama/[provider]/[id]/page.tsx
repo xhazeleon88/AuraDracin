@@ -7,6 +7,7 @@ import { fmtNum } from "@/lib/constants";
 import { getDb } from "@/lib/db";
 import { getDramaDetail, getStream } from "@/lib/dramabos";
 import { enrichDramaEngagement } from "@/lib/engagement";
+import { getBahasaSubtitles } from "@/lib/subtitles";
 import { providerDisplayName } from "@/lib/studios";
 import { countLocalLikes, recordView } from "@/lib/videos";
 
@@ -36,6 +37,15 @@ export default async function DramaWatchPage({
   const subtitleUrl = stream?.url
     ? `/api/subtitles?provider=${encodeURIComponent(provider)}&id=${encodeURIComponent(detail.id)}&ep=${episode}`
     : undefined;
+  // Warm subtitle cache in the background so the player gets cues sooner.
+  if (stream?.url) {
+    void getBahasaSubtitles({
+      provider,
+      dramaId: detail.id,
+      episode,
+      streamUrl: stream.url,
+    }).catch(() => undefined);
+  }
   recordView("dramabos", `${provider}:${detail.id}`, session?.user?.id, session?.user?.city);
 
   const db = getDb();

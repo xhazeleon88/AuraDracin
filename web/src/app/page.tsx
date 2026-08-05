@@ -8,12 +8,12 @@ import { CATEGORIES } from "@/lib/constants";
 import {
   CATALOG_PROVIDERS,
   FEATURED_STUDIO_PROVIDERS,
+  buildFeaturedSlides,
   getHomepageCatalog,
   getProviderRail,
   searchCatalog,
 } from "@/lib/dramabos";
 import { auth } from "@/lib/auth";
-import { topByEngagement } from "@/lib/engagement";
 import { providerDisplayName, providerSubtitle } from "@/lib/studios";
 import { listCityPopularDramaRefs, mergeLocalLikes } from "@/lib/videos";
 
@@ -119,7 +119,7 @@ export default async function HomePage({
     }))
     .filter((rail) => rail.items.length > 0);
 
-  const featuredSlides = topByEngagement(catalog, 5);
+  const featuredSlides = await buildFeaturedSlides(catalog, 5);
 
   const cityRefs = listCityPopularDramaRefs(city, 12);
   const cityItems =

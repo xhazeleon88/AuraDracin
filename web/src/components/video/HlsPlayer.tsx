@@ -252,22 +252,39 @@ export function HlsPlayer({
       return;
     }
 
+    // Lead so cues feel on-time vs dialogue (helps older cached VTTs too).
+    const LEAD = 1.25;
+    let raf = 0;
     const sync = () => {
       if (!subsOn) {
         setActiveText("");
         return;
       }
-      const t = video.currentTime || 0;
-      const hit = cues.find((c) => t >= c.start && t < c.end);
+      const t = (video.currentTime || 0) + LEAD;
+      // Prefer the latest cue that already started (handles overlaps better).
+      let hit: Cue | undefined;
+      for (let i = cues.length - 1; i >= 0; i -= 1) {
+        const c = cues[i];
+        if (t >= c.start && t < c.end) {
+          hit = c;
+          break;
+        }
+      }
       setActiveText(hit?.text || "");
     };
 
+    const onTime = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(sync);
+    };
+
     sync();
-    video.addEventListener("timeupdate", sync);
+    video.addEventListener("timeupdate", onTime);
     video.addEventListener("seeked", sync);
     video.addEventListener("play", sync);
     return () => {
-      video.removeEventListener("timeupdate", sync);
+      if (raf) cancelAnimationFrame(raf);
+      video.removeEventListener("timeupdate", onTime);
       video.removeEventListener("seeked", sync);
       video.removeEventListener("play", sync);
     };

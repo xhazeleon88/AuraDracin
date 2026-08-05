@@ -686,8 +686,19 @@ export function expandSearchQueries(raw: string): string[] {
   const lower = q.toLowerCase();
   const extras: string[] = [];
 
-  const map: [RegExp, string[]][] = [
-    [/\b(balas\s*dendam|dendam)\b/i, ["revenge", "payback"]],
+  // Phrases first (before single-word rules like "cinta" → "love").
+  const phrases: [RegExp, string[]][] = [
+    [/\bcinta\s+pertama\b/i, ["first love"]],
+    [/\bbalas\s*dendam\b/i, ["revenge", "payback"]],
+    [/\bkontrak\s+(nikah|istri|suami)\b/i, ["contract wife", "contract marriage"]],
+    [/\bcinta\s+terlarang\b/i, ["forbidden love"]],
+    [/\bmantan\s+(suami|istri|pacar)?\b/i, ["ex husband", "ex wife", "ex love"]],
+    [/\bkuli\s+bangunan\b/i, ["construction worker", "heir"]],
+    [/\bsang\s+pewaris\b/i, ["heir", "hidden heir"]],
+    [/\bmiliarder\b/i, ["billionaire"]],
+  ];
+
+  const words: [RegExp, string[]][] = [
     [/\b(ceo|bos|pebisnis|konglomerat)\b/i, ["ceo", "billionaire", "boss"]],
     [/\b(fantasi|werewolf|serigala|alpha|luna)\b/i, ["fantasy", "werewolf", "alpha"]],
     [/\b(cinta|romance|romansa)\b/i, ["love", "romance"]],
@@ -696,18 +707,23 @@ export function expandSearchQueries(raw: string): string[] {
     [/\b(misteri|thriller|horor)\b/i, ["mystery", "thriller"]],
     [/\b(komedi|lucu)\b/i, ["comedy"]],
     [/\b(aksi|action)\b/i, ["action"]],
+    [/\b(pertama)\b/i, ["first"]],
   ];
 
-  for (const [re, terms] of map) {
+  for (const [re, terms] of phrases) {
+    if (re.test(lower)) extras.push(...terms);
+  }
+  for (const [re, terms] of words) {
     if (re.test(lower)) extras.push(...terms);
   }
 
-  const out = [q, ...extras];
-  // GoodShort/FreeReels often need 2+ words
-  if (!q.includes(" ") && extras[0]) out.push(`${q} ${extras[0]}`);
+  // Prefer English expansions first so provider APIs get searchable terms.
+  const english = extras.filter((t) => /^[\x00-\x7F]+$/.test(t));
+  const out = [...english, q, ...extras];
+  if (!q.includes(" ") && english[0]) out.push(`${q} ${english[0]}`);
   else if (!q.includes(" ")) out.push(`${q} drama`);
 
-  return [...new Set(out.map((s) => s.trim()).filter(Boolean))].slice(0, 4);
+  return [...new Set(out.map((s) => s.trim()).filter(Boolean))].slice(0, 8);
 }
 
 function relevanceScore(card: DramaCard, query: string, expansions: string[]): number {
@@ -716,15 +732,16 @@ function relevanceScore(card: DramaCard, query: string, expansions: string[]): n
   const tokens = q.split(/\s+/).filter((t) => t.length > 1);
   let score = 0;
 
-  if (title.includes(q)) score += 120;
+  if (title.includes(q)) score += 140;
   for (const tok of tokens) {
-    if (title.includes(tok)) score += 28;
+    if (title.includes(tok)) score += 32;
   }
   for (const exp of expansions) {
     const e = exp.toLowerCase();
-    if (e !== q && title.includes(e)) score += 18;
+    if (!e || e === q) continue;
+    if (title.includes(e)) score += 48;
     for (const tok of e.split(/\s+/)) {
-      if (tok.length > 2 && title.includes(tok)) score += 8;
+      if (tok.length > 2 && title.includes(tok)) score += 10;
     }
   }
 
@@ -779,18 +796,17 @@ async function searchProviderFast(provider: string, query: string): Promise<Dram
 }
 
 /**
- * Fast multi-provider search with query expansion + relevance ranking.
- * Skips full title translation until after ranking to keep latency low.
+ * Multi-provider search with ID→EN expansion, then Bahasa re-rank so queries
+ * like "cinta pertama" match translated titles as well as English API hits.
  */
 export async function searchCatalog(q: string, limit = 60): Promise<DramaCard[]> {
   const query = q.trim();
   if (!query) return [];
 
   const expansions = expandSearchQueries(query);
-  // Primary query + best English expansion (if different)
-  const queries = [expansions[0], expansions.find((x) => x !== expansions[0] && /^[\x00-\x7F]+$/.test(x))]
-    .filter((x): x is string => Boolean(x))
-    .slice(0, 2);
+  const ascii = expansions.filter((x) => /^[\x00-\x7F]+$/.test(x));
+  // Hit APIs with English terms first; keep original for ID-native catalogs.
+  const queries = [...new Set([...ascii.slice(0, 3), query])].slice(0, 4);
 
   const batches = await Promise.all(
     SEARCH_PROVIDERS.map(async (provider) => {
@@ -802,29 +818,112 @@ export async function searchCatalog(q: string, limit = 60): Promise<DramaCard[]>
   );
 
   const merged = dedupe(batches.flat());
-  const ranked = merged
+  // Pre-rank on English API titles, keep a wider pool, then localize & re-rank
+  // so Bahasa titles (e.g. "… Cinta Pertama") can match Indonesian queries.
+  const preRanked = merged
     .map((card) => ({ card, score: relevanceScore(card, query, expansions) }))
     .sort((a, b) => b.score - a.score || (b.card.likes || 0) - (a.card.likes || 0))
     .map((row) => row.card)
-    // Keep weak matches out when we have stronger ones
-    .filter((card, index, arr) => {
-      const score = relevanceScore(card, query, expansions);
+    .slice(0, Math.max(limit * 3, 120));
+
+  const localized = await localizeCards(preRanked);
+  const qLower = query.toLowerCase();
+
+  return localized
+    .map((card, index) => {
+      const english = preRanked[index];
+      // Keep the best of English API title + Bahasa title so ID queries still
+      // benefit from expansions like "cinta pertama" → "first love".
+      let score = Math.max(
+        relevanceScore(english, query, expansions),
+        relevanceScore(card, query, expansions),
+      );
+      const idTitle = card.title.toLowerCase();
+      if (idTitle.includes(qLower)) score += 260;
+      if (expansions.some((e) => e.toLowerCase() !== qLower && idTitle.includes(e.toLowerCase()))) {
+        score += 80;
+      }
+      // Prefer known-good studios for watchability.
+      if (card.provider === "reelshort" || card.provider === "goodshort") score += 18;
+      return { card, score };
+    })
+    .sort((a, b) => b.score - a.score || (b.card.likes || 0) - (a.card.likes || 0))
+    .map((row) => row.card)
+    .filter((card, _index, arr) => {
+      const english = preRanked.find((c) => c.provider === card.provider && c.id === card.id);
+      const score = Math.max(
+        relevanceScore(english || card, query, expansions),
+        relevanceScore(card, query, expansions),
+      );
+      if (card.title.toLowerCase().includes(qLower)) return true;
       if (score >= 28) return true;
       if (arr.length < 12) return score >= 8;
       return false;
     })
     .slice(0, limit);
-
-  // Translate only the ranked slice (much faster than translating every provider dump)
-  return localizeCards(ranked);
 }
 
 /** Search API */
 export async function searchDramas(q: string, provider = DEFAULT_PROVIDER): Promise<DramaCard[]> {
   if (!q.trim()) return getTrending(provider);
   if (!provider || provider === "all") return searchCatalog(q);
-  const cards = await searchProviderFast(provider, expandSearchQueries(q)[0] || q.trim());
+  const expansions = expandSearchQueries(q);
+  const apiQuery =
+    expansions.find((x) => /^[\x00-\x7F]+$/.test(x)) || expansions[0] || q.trim();
+  const cards = await searchProviderFast(provider, apiQuery);
   return localizeCards(cards);
+}
+
+/** Prefer studios whose /drama/[provider]/[id] pages actually resolve. */
+export const FEATURED_SAFE_PROVIDERS = ["reelshort", "goodshort"] as const;
+
+/** Always pin these titles at the front of Unggulan (replacing the last slot). */
+export const FEATURED_PINNED: { provider: string; id: string }[] = [
+  { provider: "reelshort", id: "6a469b12d3f5c65f7f095b8a" },
+];
+
+/** Build Unggulan slides: pinned first, then safe high-engagement titles. */
+export async function buildFeaturedSlides(
+  catalog: DramaCard[],
+  limit = 5,
+): Promise<DramaCard[]> {
+  const pinned: DramaCard[] = [];
+  for (const ref of FEATURED_PINNED) {
+    const fromCatalog = catalog.find((c) => c.provider === ref.provider && c.id === ref.id);
+    if (fromCatalog) {
+      pinned.push(fromCatalog);
+      continue;
+    }
+    const detail = await getDramaDetail(ref.provider, ref.id).catch(() => null);
+    if (detail) {
+      pinned.push({
+        id: detail.id,
+        provider: detail.provider,
+        title: detail.title,
+        cover: detail.cover,
+        synopsis: detail.synopsis,
+        episodeCount: detail.episodeCount,
+        category: detail.category,
+        likes: detail.likes,
+        views: detail.views,
+        source: "dramabos",
+      });
+    }
+  }
+
+  const pinnedKeys = new Set(pinned.map((c) => `${c.provider}:${c.id}`));
+  const safe = new Set<string>(FEATURED_SAFE_PROVIDERS);
+  const pool = catalog.filter(
+    (c) => safe.has(c.provider) && !pinnedKeys.has(`${c.provider}:${c.id}`),
+  );
+  const rest = [...pool]
+    .sort(
+      (a, b) =>
+        (b.views || 0) + (b.likes || 0) * 20 - ((a.views || 0) + (a.likes || 0) * 20),
+    )
+    .slice(0, Math.max(0, limit - pinned.length));
+
+  return dedupe([...pinned, ...rest]).slice(0, limit);
 }
 
 /** Genre & Category API */
