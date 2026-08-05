@@ -88,9 +88,15 @@ export default async function HomePage({
   }
 
   // Featured studios first; remaining playable providers fill extra rails.
+  // On Workers, only featured studios + a short catalog to stay under CPU/wall limits.
+  const homepageProviders =
+    process.env.CLOUDFLARE_WORKERS === "1"
+      ? [...FEATURED_STUDIO_PROVIDERS]
+      : [...PLAYABLE_PROVIDERS];
+
   const [catalogRaw, ...providerBatches] = await Promise.all([
-    getHomepageCatalog(240),
-    ...PLAYABLE_PROVIDERS.map(async (provider) => {
+    getHomepageCatalog(process.env.CLOUDFLARE_WORKERS === "1" ? 80 : 240),
+    ...homepageProviders.map(async (provider) => {
       const items = await getProviderRail(provider, 25).catch(() => []);
       return { provider, items: await mergeLocalLikes(items) };
     }),

@@ -51,6 +51,11 @@ export async function translateToBahasa(text: string): Promise<string> {
   );
   if (cached?.translated) return cached.translated;
 
+  // Skip live Google fan-out on Workers (subrequest/CPU budget); use English until cached.
+  if (process.env.CLOUDFLARE_WORKERS === "1") {
+    return source;
+  }
+
   try {
     const translated = (await translateViaGoogle(source)) || source;
     await dbRun(

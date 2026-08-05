@@ -129,7 +129,8 @@ export async function mergeLocalLikes(cards: DramaCard[]): Promise<DramaCard[]> 
   if (!targets.length) return baselined;
 
   const local = new Map<string, number>();
-  const chunkSize = 200;
+  // D1 (and some SQLite builds) reject queries with too many bound parameters.
+  const chunkSize = 50;
   for (let i = 0; i < targets.length; i += chunkSize) {
     const chunk = targets.slice(i, i + chunkSize);
     const placeholders = chunk.map(() => "?").join(",");

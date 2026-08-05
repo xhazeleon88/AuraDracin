@@ -27,7 +27,8 @@
     "DRAMABOS_BASE_URL": "https://api.dramabuzz.sbs",
     "DRAMABOS_DEFAULT_PROVIDER": "reelshort",
     "DRAMABOS_LANG": "id",
-    "ADMIN_EMAIL": "admin@auradracin.com"
+    "ADMIN_EMAIL": "admin@auradracin.com",
+    "ADMIN_PASSWORD_HASH": "$2b$08$sRrLufS01mOpQ/DIub72ZOrafhN77SvLxpTq1qNVf9IJApqDdufoW"
   },
   "d1_databases": [
     {

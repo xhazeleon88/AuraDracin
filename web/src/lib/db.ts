@@ -206,7 +206,11 @@ async function openLocalSqlite(): Promise<AppDb> {
   return wrapBetterSqlite(database);
 }
 
+let schemaReady = false;
+
 async function ensureSchema(database: AppDb) {
+  if (schemaReady) return;
+
   if (typeof (database as unknown as D1Database).batch === "function") {
     const statements = SCHEMA_SQL.split(";")
       .map((s) => s.trim())
@@ -222,7 +226,11 @@ async function ensureSchema(database: AppDb) {
   const existing = await database.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
   if (!existing) {
     const id = crypto.randomUUID();
-    const hash = bcrypt.hashSync(password, 12);
+    // bcrypt.hashSync(cost=12) can exceed Workers CPU limits — use async + lighter cost,
+    // or a precomputed hash from ADMIN_PASSWORD_HASH.
+    const hash =
+      process.env.ADMIN_PASSWORD_HASH ||
+      (await bcrypt.hash(password, process.env.CLOUDFLARE_WORKERS === "1" ? 8 : 12));
     await database
       .prepare(
         `INSERT INTO users (id, email, password_hash, name, city, role)
@@ -245,6 +253,8 @@ async function ensureSchema(database: AppDb) {
     )
     .bind()
     .run();
+
+  schemaReady = true;
 }
 
 export async function getDb(): Promise<AppDb> {
