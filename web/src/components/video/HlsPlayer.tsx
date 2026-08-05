@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+type Cue = { start: number; end: number; text: string };
 
 function toPlayableSrc(src: string, type: "hls" | "mp4") {
   if (!src) return src;
@@ -17,6 +19,46 @@ function toPlayableSrc(src: string, type: "hls" | "mp4") {
 
 function looksLikeHls(src: string, type: "hls" | "mp4") {
   return type === "hls" || /\.m3u8(\?|$)/i.test(src) || /[?&]url=.*m3u8/i.test(src);
+}
+
+function parseVttTime(raw: string) {
+  const parts = raw.trim().split(":");
+  if (parts.length < 2) return 0;
+  const hours = parts.length === 3 ? Number(parts[0]) : 0;
+  const minutes = Number(parts.length === 3 ? parts[1] : parts[0]);
+  const secParts = (parts.length === 3 ? parts[2] : parts[1]).split(".");
+  const seconds = Number(secParts[0] || 0);
+  const millis = Number((secParts[1] || "0").padEnd(3, "0").slice(0, 3));
+  return hours * 3600 + minutes * 60 + seconds + millis / 1000;
+}
+
+function parseVtt(text: string): Cue[] {
+  const body = text.replace(/^\uFEFF?WEBVTT[^\n]*\n/, "");
+  const blocks = body.split(/\n\s*\n/);
+  const cues: Cue[] = [];
+
+  for (const block of blocks) {
+    const lines = block
+      .split("\n")
+      .map((l) => l.trimEnd())
+      .filter((l) => l.length > 0);
+    if (!lines.length) continue;
+    if (lines[0].startsWith("NOTE") || lines[0].startsWith("STYLE") || lines[0].startsWith("REGION")) {
+      continue;
+    }
+
+    let idx = 0;
+    if (lines[0] && !lines[0].includes("-->")) idx = 1;
+    const timing = lines[idx];
+    if (!timing || !timing.includes("-->")) continue;
+    const [startRaw, endRaw] = timing.split("-->").map((s) => s.trim().split(/\s+/)[0]);
+    const start = parseVttTime(startRaw || "");
+    const end = parseVttTime(endRaw || "");
+    const textLines = lines.slice(idx + 1).join("\n").replace(/<[^>]+>/g, "").trim();
+    if (!textLines || !(end > start)) continue;
+    cues.push({ start, end, text: textLines });
+  }
+  return cues;
 }
 
 export function HlsPlayer({
@@ -39,9 +81,12 @@ export function HlsPlayer({
   const [advancing, setAdvancing] = useState(false);
   const [subsOn, setSubsOn] = useState(true);
   const [subsLoading, setSubsLoading] = useState(false);
-  const [hasSubs, setHasSubs] = useState(false);
+  const [subsError, setSubsError] = useState("");
+  const [cues, setCues] = useState<Cue[]>([]);
+  const [activeText, setActiveText] = useState("");
   const playable = toPlayableSrc(src, type);
   const isImage = Boolean(src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i));
+  const hasSubs = cues.length > 0;
 
   useEffect(() => {
     setAdvancing(false);
@@ -150,49 +195,45 @@ export function HlsPlayer({
     return () => video.removeEventListener("ended", onEnded);
   }, [nextHref, router, isImage, src]);
 
-  // Native TextTrack so cues also render during video fullscreen.
+  // Custom cue overlay — more reliable than native TextTrack with HLS.js.
   useEffect(() => {
-    const video = ref.current;
-    if (!video || !subtitleUrl || isImage) {
-      setHasSubs(false);
+    if (!subtitleUrl || isImage) {
+      setCues([]);
+      setActiveText("");
+      setSubsError("");
+      setSubsLoading(false);
       return;
     }
 
     let cancelled = false;
-    let objectUrl = "";
-    let trackEl: HTMLTrackElement | null = null;
+    const controller = new AbortController();
     setSubsLoading(true);
-    setHasSubs(false);
+    setSubsError("");
+    setCues([]);
+    setActiveText("");
 
-    // Clear previous tracks/elements
-    video.querySelectorAll("track").forEach((el) => el.remove());
-
-    fetch(subtitleUrl)
-      .then((r) => r.text())
-      .then((text) => {
-        if (cancelled || !text.includes("WEBVTT")) return;
-        const blob = new Blob([text], { type: "text/vtt" });
-        objectUrl = URL.createObjectURL(blob);
-        trackEl = document.createElement("track");
-        trackEl.kind = "subtitles";
-        trackEl.label = "Bahasa";
-        trackEl.srclang = "id";
-        trackEl.src = objectUrl;
-        trackEl.default = true;
-        video.appendChild(trackEl);
-
-        const applyMode = () => {
-          const track = trackEl?.track;
-          if (!track) return;
-          track.mode = subsOn ? "showing" : "hidden";
-          setHasSubs(true);
-        };
-        trackEl.addEventListener("load", applyMode);
-        // Some browsers expose the track immediately.
-        applyMode();
+    fetch(subtitleUrl, { signal: controller.signal })
+      .then(async (res) => {
+        const text = await res.text();
+        if (cancelled) return;
+        if (!text.includes("WEBVTT")) {
+          setSubsError("Subtitle gagal dimuat");
+          return;
+        }
+        const parsed = parseVtt(text);
+        if (!parsed.length) {
+          const note = text.match(/NOTE\s*\n([\s\S]*?)(?:\n\n|$)/)?.[1]?.trim();
+          setSubsError(note || "Subtitle belum tersedia");
+          setCues([]);
+          return;
+        }
+        setCues(parsed);
+        setSubsError("");
       })
-      .catch(() => {
-        if (!cancelled) setHasSubs(false);
+      .catch((err) => {
+        if (cancelled || err?.name === "AbortError") return;
+        setSubsError("Subtitle gagal dimuat");
+        setCues([]);
       })
       .finally(() => {
         if (!cancelled) setSubsLoading(false);
@@ -200,44 +241,43 @@ export function HlsPlayer({
 
     return () => {
       cancelled = true;
-      trackEl?.remove();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      controller.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-apply mode in separate effect
   }, [subtitleUrl, isImage, src]);
 
   useEffect(() => {
     const video = ref.current;
-    if (!video) return;
-    for (let i = 0; i < video.textTracks.length; i++) {
-      const track = video.textTracks[i];
-      if (track.kind === "subtitles" || track.kind === "captions") {
-        track.mode = subsOn ? "showing" : "hidden";
-      }
+    if (!video || !hasSubs) {
+      setActiveText("");
+      return;
     }
-  }, [subsOn, hasSubs, src]);
 
-  // When user hits native fullscreen, keep subtitle mode applied (some browsers reset it).
-  useEffect(() => {
-    const video = ref.current;
-    if (!video) return;
-    const reapply = () => {
-      for (let i = 0; i < video.textTracks.length; i++) {
-        const track = video.textTracks[i];
-        if (track.kind === "subtitles" || track.kind === "captions") {
-          track.mode = subsOn ? "showing" : "hidden";
-        }
+    const sync = () => {
+      if (!subsOn) {
+        setActiveText("");
+        return;
       }
+      const t = video.currentTime || 0;
+      const hit = cues.find((c) => t >= c.start && t < c.end);
+      setActiveText(hit?.text || "");
     };
-    document.addEventListener("fullscreenchange", reapply);
-    video.addEventListener("webkitbeginfullscreen", reapply as EventListener);
-    video.addEventListener("webkitendfullscreen", reapply as EventListener);
+
+    sync();
+    video.addEventListener("timeupdate", sync);
+    video.addEventListener("seeked", sync);
+    video.addEventListener("play", sync);
     return () => {
-      document.removeEventListener("fullscreenchange", reapply);
-      video.removeEventListener("webkitbeginfullscreen", reapply as EventListener);
-      video.removeEventListener("webkitendfullscreen", reapply as EventListener);
+      video.removeEventListener("timeupdate", sync);
+      video.removeEventListener("seeked", sync);
+      video.removeEventListener("play", sync);
     };
-  }, [subsOn, hasSubs]);
+  }, [cues, hasSubs, subsOn, src]);
+
+  const statusLabel = useMemo(() => {
+    if (subsLoading) return "Subtitle…";
+    if (!hasSubs && subsError) return "Subtitle ✕";
+    return subsOn ? "Subtitle ON" : "Subtitle OFF";
+  }, [subsLoading, hasSubs, subsError, subsOn]);
 
   if (isImage) {
     return (
@@ -259,21 +299,29 @@ export function HlsPlayer({
         playsInline
         autoPlay
         poster={poster}
-        crossOrigin="anonymous"
       />
+
+      {subsOn && activeText ? (
+        <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[72px] z-20 flex justify-center px-4 sm:bottom-[58px]">
+          <div className="max-w-[92%] whitespace-pre-line rounded bg-black/75 px-3 py-1.5 text-center text-[13px] font-semibold leading-snug text-white shadow-sm">
+            {activeText}
+          </div>
+        </div>
+      ) : null}
 
       {subtitleUrl ? (
         <button
           type="button"
           className={`absolute right-2 top-2 z-30 border px-2.5 py-1 text-[11px] font-bold ${
-            subsOn
+            subsOn && hasSubs
               ? "border-white bg-black/70 text-white"
               : "border-white/40 bg-black/40 text-white/70"
           }`}
           onClick={() => setSubsOn((v) => !v)}
           aria-pressed={subsOn}
+          title={subsError || undefined}
         >
-          {subsLoading ? "Subtitle…" : subsOn ? "Subtitle ON" : "Subtitle OFF"}
+          {statusLabel}
         </button>
       ) : null}
 

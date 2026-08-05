@@ -15,9 +15,20 @@ function cacheId(provider: string, dramaId: string, episode: number) {
     .slice(0, 32);
 }
 
+function cleanSpawnEnv(): NodeJS.ProcessEnv {
+  // tmux/agent LD_LIBRARY_PATH can break ffmpeg/whisper (libncursesw mismatch).
+  const env = { ...process.env };
+  delete env.LD_LIBRARY_PATH;
+  delete env.LD_PRELOAD;
+  return env;
+}
+
 function run(cmd: string, args: string[], timeoutMs = 180000): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: cleanSpawnEnv(),
+    });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
@@ -34,6 +45,10 @@ function run(cmd: string, args: string[], timeoutMs = 180000): Promise<{ code: n
       resolve({ code: code ?? 1, stdout, stderr });
     });
   });
+}
+
+function vttHasCues(vtt: string) {
+  return /\d{2}:\d{2}:\d{2}\.\d{3}\s+-->\s+\d{2}:\d{2}:\d{2}\.\d{3}/.test(vtt);
 }
 
 function toVttTime(seconds: number) {
@@ -140,6 +155,7 @@ export async function getBahasaSubtitles(opts: {
   const cached = db
     .prepare(`SELECT vtt, status FROM subtitle_cache WHERE id = ?`)
     .get(id) as { vtt: string; status: string } | undefined;
+  // Serve successful caches. status=error rows fall through and retry.
   if (cached?.status === "ready" && cached.vtt.startsWith("WEBVTT")) {
     return { vtt: cached.vtt, cached: true };
   }
