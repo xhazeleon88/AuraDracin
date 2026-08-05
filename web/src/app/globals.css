@@ -95,11 +95,21 @@ h4 {
 
 .btn-primary {
   background: var(--color-accent);
-  color: var(--color-bg);
+  color: #fff;
 }
 
-.btn-primary:hover {
+.btn-primary:hover,
+.btn-primary:focus {
   background: var(--color-accent-600);
+  color: #fff;
+}
+
+a.btn-primary,
+a.btn-primary:visited,
+a.btn-primary:hover,
+a.btn-primary:focus,
+a.btn-primary:active {
+  color: #fff;
 }
 
 .btn-secondary {
@@ -242,9 +252,11 @@ h4 {
   color: var(--color-neutral-300);
 }
 
-.ep-chip-active,
-.ep-chip-active:hover {
-  border-color: var(--color-accent);
-  background: var(--color-accent);
+video::cue {
+  background: rgba(0, 0, 0, 0.78);
   color: #fff;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
 }

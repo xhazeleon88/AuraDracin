@@ -19,37 +19,6 @@ function looksLikeHls(src: string, type: "hls" | "mp4") {
   return type === "hls" || /\.m3u8(\?|$)/i.test(src) || /[?&]url=.*m3u8/i.test(src);
 }
 
-type Cue = { start: number; end: number; text: string };
-
-function parseVtt(raw: string): Cue[] {
-  const cues: Cue[] = [];
-  const blocks = raw.replace(/\r/g, "").split(/\n\n+/);
-  for (const block of blocks) {
-    const lines = block.split("\n").filter(Boolean);
-    if (!lines.length || lines[0] === "WEBVTT" || lines[0].startsWith("NOTE")) continue;
-    const timeLine = lines.find((l) => l.includes("-->"));
-    if (!timeLine) continue;
-    const [startRaw, endRaw] = timeLine.split("-->").map((s) => s.trim());
-    const text = lines.slice(lines.indexOf(timeLine) + 1).join(" ").trim();
-    const start = vttToSeconds(startRaw);
-    const end = vttToSeconds(endRaw.split(/\s/)[0]);
-    if (text && end > start) cues.push({ start, end, text });
-  }
-  return cues;
-}
-
-function vttToSeconds(stamp: string) {
-  const clean = stamp.trim().replace(",", ".");
-  const parts = clean.split(":");
-  if (parts.length === 3) {
-    return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]);
-  }
-  if (parts.length === 2) {
-    return Number(parts[0]) * 60 + Number(parts[1]);
-  }
-  return Number(clean) || 0;
-}
-
 export function HlsPlayer({
   src,
   poster,
@@ -64,13 +33,13 @@ export function HlsPlayer({
   subtitleUrl?: string;
 }) {
   const router = useRouter();
+  const shellRef = useRef<HTMLDivElement>(null);
   const ref = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
   const [advancing, setAdvancing] = useState(false);
   const [subsOn, setSubsOn] = useState(true);
   const [subsLoading, setSubsLoading] = useState(false);
-  const [cues, setCues] = useState<Cue[]>([]);
-  const [activeCue, setActiveCue] = useState("");
+  const [hasSubs, setHasSubs] = useState(false);
   const playable = toPlayableSrc(src, type);
   const isImage = Boolean(src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i));
 
@@ -181,49 +150,94 @@ export function HlsPlayer({
     return () => video.removeEventListener("ended", onEnded);
   }, [nextHref, router, isImage, src]);
 
+  // Native TextTrack so cues also render during video fullscreen.
   useEffect(() => {
-    if (!subtitleUrl || isImage) {
-      setCues([]);
-      setActiveCue("");
+    const video = ref.current;
+    if (!video || !subtitleUrl || isImage) {
+      setHasSubs(false);
       return;
     }
+
     let cancelled = false;
+    let objectUrl = "";
+    let trackEl: HTMLTrackElement | null = null;
     setSubsLoading(true);
-    setCues([]);
-    setActiveCue("");
+    setHasSubs(false);
+
+    // Clear previous tracks/elements
+    video.querySelectorAll("track").forEach((el) => el.remove());
+
     fetch(subtitleUrl)
       .then((r) => r.text())
       .then((text) => {
-        if (cancelled) return;
-        setCues(parseVtt(text));
+        if (cancelled || !text.includes("WEBVTT")) return;
+        const blob = new Blob([text], { type: "text/vtt" });
+        objectUrl = URL.createObjectURL(blob);
+        trackEl = document.createElement("track");
+        trackEl.kind = "subtitles";
+        trackEl.label = "Bahasa";
+        trackEl.srclang = "id";
+        trackEl.src = objectUrl;
+        trackEl.default = true;
+        video.appendChild(trackEl);
+
+        const applyMode = () => {
+          const track = trackEl?.track;
+          if (!track) return;
+          track.mode = subsOn ? "showing" : "hidden";
+          setHasSubs(true);
+        };
+        trackEl.addEventListener("load", applyMode);
+        // Some browsers expose the track immediately.
+        applyMode();
       })
       .catch(() => {
-        if (!cancelled) setCues([]);
+        if (!cancelled) setHasSubs(false);
       })
       .finally(() => {
         if (!cancelled) setSubsLoading(false);
       });
+
     return () => {
       cancelled = true;
+      trackEl?.remove();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-apply mode in separate effect
   }, [subtitleUrl, isImage, src]);
 
   useEffect(() => {
     const video = ref.current;
-    if (!video || !cues.length) return;
-    const onTime = () => {
-      if (!subsOn) {
-        setActiveCue("");
-        return;
+    if (!video) return;
+    for (let i = 0; i < video.textTracks.length; i++) {
+      const track = video.textTracks[i];
+      if (track.kind === "subtitles" || track.kind === "captions") {
+        track.mode = subsOn ? "showing" : "hidden";
       }
-      const t = video.currentTime;
-      const hit = cues.find((c) => t >= c.start && t <= c.end);
-      setActiveCue(hit?.text || "");
+    }
+  }, [subsOn, hasSubs, src]);
+
+  // When user hits native fullscreen, keep subtitle mode applied (some browsers reset it).
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    const reapply = () => {
+      for (let i = 0; i < video.textTracks.length; i++) {
+        const track = video.textTracks[i];
+        if (track.kind === "subtitles" || track.kind === "captions") {
+          track.mode = subsOn ? "showing" : "hidden";
+        }
+      }
     };
-    video.addEventListener("timeupdate", onTime);
-    onTime();
-    return () => video.removeEventListener("timeupdate", onTime);
-  }, [cues, subsOn, src]);
+    document.addEventListener("fullscreenchange", reapply);
+    video.addEventListener("webkitbeginfullscreen", reapply as EventListener);
+    video.addEventListener("webkitendfullscreen", reapply as EventListener);
+    return () => {
+      document.removeEventListener("fullscreenchange", reapply);
+      video.removeEventListener("webkitbeginfullscreen", reapply as EventListener);
+      video.removeEventListener("webkitendfullscreen", reapply as EventListener);
+    };
+  }, [subsOn, hasSubs]);
 
   if (isImage) {
     return (
@@ -237,7 +251,7 @@ export function HlsPlayer({
   }
 
   return (
-    <div className="relative h-full w-full bg-black">
+    <div ref={shellRef} className="relative h-full w-full bg-black">
       <video
         ref={ref}
         className="h-full w-full object-contain"
@@ -261,14 +275,6 @@ export function HlsPlayer({
         >
           {subsLoading ? "Subtitle…" : subsOn ? "Subtitle ON" : "Subtitle OFF"}
         </button>
-      ) : null}
-
-      {subsOn && activeCue ? (
-        <div className="pointer-events-none absolute inset-x-3 bottom-16 z-20 flex justify-center">
-          <p className="max-w-[92%] bg-black/75 px-3 py-1.5 text-center text-[13px] font-semibold leading-snug text-white">
-            {activeCue}
-          </p>
-        </div>
       ) : null}
 
       {advancing ? (
