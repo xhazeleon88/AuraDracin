@@ -1,0 +1,52 @@
+import Link from "next/link";
+import { listStudioProfiles } from "@/lib/studios";
+
+export const dynamic = "force-dynamic";
+
+export default function StudioIndexPage() {
+  const studios = listStudioProfiles();
+
+  return (
+    <div className="pb-24">
+      <div className="border-b-2 border-[var(--color-divider)] px-4 py-5">
+        <h1 className="text-[22px]">Studio</h1>
+        <p className="text-muted m-0 mt-1 text-sm">
+          Pilih studio drama favoritmu. Semua streaming eksklusif di AuraDracin.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 px-4 py-4">
+        {studios.map((studio) => (
+          <Link
+            key={studio.id}
+            href={`/studio/${studio.id}`}
+            className="relative overflow-hidden border-2 border-[var(--color-divider)] text-[var(--color-text)] no-underline"
+          >
+            <div
+              className="relative flex h-[108px] items-center gap-3.5 px-4"
+              style={{
+                background: `linear-gradient(120deg, ${studio.accent} 0%, #1a1a1a 58%, #0d0d0d 100%)`,
+              }}
+            >
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden border border-white/30 bg-black/35">
+                <img
+                  src={studio.logo}
+                  alt={studio.name}
+                  className="h-10 w-10 object-contain"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div className="min-w-0 text-white">
+                <h2 className="m-0 text-[18px]">{studio.name}</h2>
+                <p className="m-0 mt-0.5 line-clamp-2 text-[12px] text-white/80">
+                  {studio.tagline}
+                </p>
+              </div>
+              <i className="fa-solid fa-chevron-right ml-auto text-white/70" />
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}

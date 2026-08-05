@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { fmtNum } from "@/lib/constants";
+import { providerDisplayName } from "@/lib/studios";
 import type { DramaCard } from "@/lib/types";
 
 export function VideoCard({
@@ -45,7 +46,7 @@ export function VideoCard({
         ) : null}
         {item.source === "dramabos" ? (
           <span className="absolute bottom-1.5 left-1.5 bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-            {item.provider}
+            {providerDisplayName(item.provider)}
           </span>
         ) : null}
       </div>

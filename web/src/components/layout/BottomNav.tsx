@@ -21,6 +21,12 @@ export function BottomNav() {
       match: (p: string) => p.startsWith("/kategori"),
     },
     {
+      href: "/studio",
+      label: "Studio",
+      icon: "fa-clapperboard",
+      match: (p: string) => p.startsWith("/studio"),
+    },
+    {
       href: "/profil",
       label: "Profil",
       icon: "fa-user",

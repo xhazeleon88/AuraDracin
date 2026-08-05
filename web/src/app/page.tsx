@@ -11,6 +11,7 @@ import {
   searchDramas,
 } from "@/lib/dramabos";
 import { auth } from "@/lib/auth";
+import { providerDisplayName, providerSubtitle } from "@/lib/studios";
 import { listCityPopularDramaRefs, mergeLocalLikes } from "@/lib/videos";
 
 export const dynamic = "force-dynamic";
@@ -90,7 +91,7 @@ export default async function HomePage({
         subtitle={
           q
             ? `Hasil pencarian “${q}” dari semua sumber`
-            : `${trending.length} judul dari banyak sumber DramaBuzz`
+            : "Kumpulan Drama terpopuler di AuraDracin"
         }
         items={trending.slice(0, 60)}
       />
@@ -98,8 +99,9 @@ export default async function HomePage({
       {providerRails.map((rail) => (
         <HorizontalRail
           key={rail.provider}
-          title={rail.provider}
-          subtitle={`${rail.items.length} drama dari ${rail.provider}`}
+          title={providerDisplayName(rail.provider)}
+          subtitle={providerSubtitle(rail.provider)}
+          href={`/studio/${rail.provider}`}
           items={rail.items}
         />
       ))}
@@ -107,7 +109,7 @@ export default async function HomePage({
       <section className="border-t-2 border-[var(--color-divider)] py-5">
         <div className="px-4 pb-1">
           <h3 className="text-[19px]">🆕 Terbaru</h3>
-          <p className="text-muted m-0 text-xs">Update terbaru dari API</p>
+          <p className="text-muted m-0 text-xs">Terbaru di AuraDracin</p>
         </div>
         <div className="grid grid-cols-2 gap-3 px-4 pt-3.5">
           {latest.slice(0, 12).map((item) => (

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { VideoCard } from "@/components/video/VideoCard";
 import type { DramaCard } from "@/lib/types";
 
@@ -5,17 +6,25 @@ export function HorizontalRail({
   title,
   subtitle,
   items,
+  href,
 }: {
   title: string;
   subtitle?: string;
   items: DramaCard[];
+  href?: string;
 }) {
   if (!items.length) return null;
 
   return (
     <section className="border-t-2 border-[var(--color-divider)] py-5">
       <div className="px-4 pb-1">
-        <h3 className="text-[19px]">{title}</h3>
+        {href ? (
+          <Link href={href} className="text-[var(--color-text)] no-underline">
+            <h3 className="text-[19px]">{title}</h3>
+          </Link>
+        ) : (
+          <h3 className="text-[19px]">{title}</h3>
+        )}
         {subtitle ? <p className="text-muted m-0 text-xs">{subtitle}</p> : null}
       </div>
       <div className="flex gap-3 overflow-x-auto px-4 pt-3.5">
