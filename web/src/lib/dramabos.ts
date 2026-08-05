@@ -5,6 +5,7 @@ import {
   getDemoStream,
   searchDemo,
 } from "./demo-dramabos";
+import { translateToBahasa } from "./translate";
 import type { DramaCard, DramaDetail, StreamResult } from "./types";
 
 /**
@@ -188,6 +189,41 @@ function dedupe(cards: DramaCard[]) {
   });
 }
 
+async function localizeCard(card: DramaCard): Promise<DramaCard> {
+  const [title, synopsis] = await Promise.all([
+    translateToBahasa(card.title),
+    card.synopsis ? translateToBahasa(card.synopsis) : Promise.resolve(card.synopsis),
+  ]);
+  return { ...card, title, synopsis };
+}
+
+async function localizeCards(cards: DramaCard[]): Promise<DramaCard[]> {
+  const out: DramaCard[] = new Array(cards.length);
+  const queue = [...cards.entries()];
+  await Promise.all(
+    Array.from({ length: Math.min(6, queue.length || 1) }, async () => {
+      while (queue.length) {
+        const next = queue.shift();
+        if (!next) break;
+        const [index, card] = next;
+        out[index] = await localizeCard(card);
+      }
+    }),
+  );
+  return out;
+}
+
+async function localizeDetail(detail: DramaDetail): Promise<DramaDetail> {
+  const base = await localizeCard(detail);
+  const episodes = await Promise.all(
+    detail.episodes.map(async (ep) => ({
+      ...ep,
+      title: await translateToBahasa(ep.title),
+    })),
+  );
+  return { ...detail, ...base, episodes };
+}
+
 /** Provider Status API */
 export async function getProviderStatus(): Promise<DramabosStatus> {
   const key = accessCode();
@@ -250,10 +286,10 @@ export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promis
     const res = await fetchJson(path);
     if (!res.ok) continue;
     const cards = normalizeCards(res.data, provider);
-    if (cards.length) return cards;
+    if (cards.length) return localizeCards(cards);
   }
 
-  return DEMO_FEED.map((d) => ({ ...d, provider }));
+  return localizeCards(DEMO_FEED.map((d) => ({ ...d, provider })));
 }
 
 export async function getLatest(provider = DEFAULT_PROVIDER, page = 1): Promise<DramaCard[]> {
@@ -264,7 +300,7 @@ export async function getLatest(provider = DEFAULT_PROVIDER, page = 1): Promise<
     );
     if (res.ok) {
       const cards = normalizeCards(res.data, provider);
-      if (cards.length) return cards;
+      if (cards.length) return localizeCards(cards);
     }
   }
   return getTrending(provider, page);
@@ -308,10 +344,10 @@ export async function searchDramas(q: string, provider = DEFAULT_PROVIDER): Prom
     const res = await fetchJson(path);
     if (!res.ok) continue;
     const cards = normalizeCards(res.data, provider);
-    if (cards.length) return cards;
+    if (cards.length) return localizeCards(cards);
   }
 
-  return searchDemo(q).map((d) => ({ ...d, provider }));
+  return localizeCards(searchDemo(q).map((d) => ({ ...d, provider })));
 }
 
 /** Genre & Category API */
@@ -349,7 +385,7 @@ export async function getByGenre(
     );
     if (res.ok) {
       const cards = normalizeCards(res.data, provider);
-      if (cards.length) return cards;
+      if (cards.length) return localizeCards(cards);
     }
     const hot = await getTrending("goodshort", page);
     return hot.filter((c) =>
@@ -360,12 +396,12 @@ export async function getByGenre(
   const res = await fetchJson(`${host}/search?q=${encodeURIComponent(q)}&lang=en&page=${page}`);
   if (res.ok) {
     const cards = normalizeCards(res.data, provider);
-    if (cards.length) return cards;
+    if (cards.length) return localizeCards(cards);
   }
 
   // unused encoded kept for future genre endpoints
   void encoded;
-  return genreDemo(type).map((d) => ({ ...d, provider }));
+  return localizeCards(genreDemo(type).map((d) => ({ ...d, provider })));
 }
 
 /** Drama API + Episode API */
@@ -402,12 +438,12 @@ export async function getDramaDetail(
           };
         });
 
-        return {
+        return localizeDetail({
           ...base,
           synopsis: base.synopsis || pickString(book, ["introduction", "desc"]) || "",
           episodes: normalizedEps,
           hashtags: ["dracin", provider, String(base.category || "romance")],
-        };
+        });
       }
     }
   } else {
@@ -435,7 +471,7 @@ export async function getDramaDetail(
           locked: Boolean(ep.is_lock),
         }));
 
-        return {
+        return localizeDetail({
           ...base,
           synopsis: base.synopsis || pickString(row, ["desc", "introduction"]),
           episodes:
@@ -448,12 +484,13 @@ export async function getDramaDetail(
                   thumbnail: base.cover,
                 })),
           hashtags: ["dracin", provider, String(base.category || "romance")],
-        };
+        });
       }
     }
   }
 
-  return getDemoDetail(provider, id);
+  const demo = getDemoDetail(provider, id);
+  return demo ? localizeDetail(demo) : null;
 }
 
 /** Streaming API + Download/CDN API */

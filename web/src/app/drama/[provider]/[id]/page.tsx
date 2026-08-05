@@ -29,6 +29,9 @@ export default async function DramaWatchPage({
   const nextHref = nextEpisode
     ? `/drama/${provider}/${encodeURIComponent(detail.id)}?ep=${nextEpisode.number}`
     : undefined;
+  const subtitleUrl = stream?.url
+    ? `/api/subtitles?provider=${encodeURIComponent(provider)}&id=${encodeURIComponent(detail.id)}&ep=${episode}`
+    : undefined;
   recordView("dramabos", `${provider}:${detail.id}`, session?.user?.id, session?.user?.city);
 
   const db = getDb();
@@ -81,6 +84,7 @@ export default async function DramaWatchPage({
               poster={detail.cover}
               type={stream.type || "hls"}
               nextHref={nextHref}
+              subtitleUrl={subtitleUrl}
             />
           ) : (
             <div className="relative flex h-full w-full items-center justify-center bg-black">

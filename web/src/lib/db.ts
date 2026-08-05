@@ -100,6 +100,24 @@ function ensureSchema(database: Database.Database) {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS translation_cache (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      translated TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS subtitle_cache (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      drama_id TEXT NOT NULL,
+      episode INTEGER NOT NULL,
+      stream_url TEXT,
+      vtt TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ready',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }
 

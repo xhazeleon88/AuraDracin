@@ -9,7 +9,6 @@ function toPlayableSrc(src: string, type: "hls" | "mp4") {
     return src;
   }
   if (type === "mp4" && src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i)) return src;
-  // Proxy remote media to avoid CDN CORS / hotlink blocks in the browser.
   if (/^https?:\/\//i.test(src)) {
     return `/api/stream/proxy?url=${encodeURIComponent(src)}`;
   }
@@ -20,22 +19,58 @@ function looksLikeHls(src: string, type: "hls" | "mp4") {
   return type === "hls" || /\.m3u8(\?|$)/i.test(src) || /[?&]url=.*m3u8/i.test(src);
 }
 
+type Cue = { start: number; end: number; text: string };
+
+function parseVtt(raw: string): Cue[] {
+  const cues: Cue[] = [];
+  const blocks = raw.replace(/\r/g, "").split(/\n\n+/);
+  for (const block of blocks) {
+    const lines = block.split("\n").filter(Boolean);
+    if (!lines.length || lines[0] === "WEBVTT" || lines[0].startsWith("NOTE")) continue;
+    const timeLine = lines.find((l) => l.includes("-->"));
+    if (!timeLine) continue;
+    const [startRaw, endRaw] = timeLine.split("-->").map((s) => s.trim());
+    const text = lines.slice(lines.indexOf(timeLine) + 1).join(" ").trim();
+    const start = vttToSeconds(startRaw);
+    const end = vttToSeconds(endRaw.split(/\s/)[0]);
+    if (text && end > start) cues.push({ start, end, text });
+  }
+  return cues;
+}
+
+function vttToSeconds(stamp: string) {
+  const clean = stamp.trim().replace(",", ".");
+  const parts = clean.split(":");
+  if (parts.length === 3) {
+    return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]);
+  }
+  if (parts.length === 2) {
+    return Number(parts[0]) * 60 + Number(parts[1]);
+  }
+  return Number(clean) || 0;
+}
+
 export function HlsPlayer({
   src,
   poster,
   type = "hls",
   nextHref,
+  subtitleUrl,
 }: {
   src: string;
   poster?: string;
   type?: "hls" | "mp4";
-  /** When set, navigate here when the current episode ends. */
   nextHref?: string;
+  subtitleUrl?: string;
 }) {
   const router = useRouter();
   const ref = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
   const [advancing, setAdvancing] = useState(false);
+  const [subsOn, setSubsOn] = useState(true);
+  const [subsLoading, setSubsLoading] = useState(false);
+  const [cues, setCues] = useState<Cue[]>([]);
+  const [activeCue, setActiveCue] = useState("");
   const playable = toPlayableSrc(src, type);
   const isImage = Boolean(src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i));
 
@@ -60,7 +95,7 @@ export function HlsPlayer({
         try {
           await video!.play();
         } catch {
-          // Unmuted autoplay may be blocked; controls remain available
+          /* unmuted autoplay may be blocked */
         }
         return;
       }
@@ -68,8 +103,6 @@ export function HlsPlayer({
       const Hls = (await import("hls.js")).default;
       if (cancelled) return;
 
-      // Chrome reports canPlayType(mpegurl) as "maybe" but cannot actually
-      // play HLS natively. Prefer hls.js whenever MSE is available.
       if (Hls.isSupported()) {
         const instance = new Hls({
           enableWorker: true,
@@ -113,7 +146,6 @@ export function HlsPlayer({
         return;
       }
 
-      // Safari / iOS native HLS fallback
       if (video!.canPlayType("application/vnd.apple.mpegurl")) {
         video!.muted = false;
         video!.src = playable;
@@ -141,7 +173,6 @@ export function HlsPlayer({
   useEffect(() => {
     const video = ref.current;
     if (!video || isImage || !nextHref) return;
-
     const onEnded = () => {
       setAdvancing(true);
       router.push(nextHref);
@@ -149,6 +180,50 @@ export function HlsPlayer({
     video.addEventListener("ended", onEnded);
     return () => video.removeEventListener("ended", onEnded);
   }, [nextHref, router, isImage, src]);
+
+  useEffect(() => {
+    if (!subtitleUrl || isImage) {
+      setCues([]);
+      setActiveCue("");
+      return;
+    }
+    let cancelled = false;
+    setSubsLoading(true);
+    setCues([]);
+    setActiveCue("");
+    fetch(subtitleUrl)
+      .then((r) => r.text())
+      .then((text) => {
+        if (cancelled) return;
+        setCues(parseVtt(text));
+      })
+      .catch(() => {
+        if (!cancelled) setCues([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSubsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [subtitleUrl, isImage, src]);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || !cues.length) return;
+    const onTime = () => {
+      if (!subsOn) {
+        setActiveCue("");
+        return;
+      }
+      const t = video.currentTime;
+      const hit = cues.find((c) => t >= c.start && t <= c.end);
+      setActiveCue(hit?.text || "");
+    };
+    video.addEventListener("timeupdate", onTime);
+    onTime();
+    return () => video.removeEventListener("timeupdate", onTime);
+  }, [cues, subsOn, src]);
 
   if (isImage) {
     return (
@@ -170,7 +245,32 @@ export function HlsPlayer({
         playsInline
         autoPlay
         poster={poster}
+        crossOrigin="anonymous"
       />
+
+      {subtitleUrl ? (
+        <button
+          type="button"
+          className={`absolute right-2 top-2 z-30 border px-2.5 py-1 text-[11px] font-bold ${
+            subsOn
+              ? "border-white bg-black/70 text-white"
+              : "border-white/40 bg-black/40 text-white/70"
+          }`}
+          onClick={() => setSubsOn((v) => !v)}
+          aria-pressed={subsOn}
+        >
+          {subsLoading ? "Subtitle…" : subsOn ? "Subtitle ON" : "Subtitle OFF"}
+        </button>
+      ) : null}
+
+      {subsOn && activeCue ? (
+        <div className="pointer-events-none absolute inset-x-3 bottom-16 z-20 flex justify-center">
+          <p className="max-w-[92%] bg-black/75 px-3 py-1.5 text-center text-[13px] font-semibold leading-snug text-white">
+            {activeCue}
+          </p>
+        </div>
+      ) : null}
+
       {advancing ? (
         <div className="absolute inset-x-0 bottom-12 z-20 bg-black/75 px-3 py-2 text-center text-xs text-white">
           Lanjut episode berikutnya…
