@@ -55,11 +55,12 @@ export function HlsPlayer({
       const isHls = looksLikeHls(src, type);
 
       if (!isHls) {
+        video!.muted = false;
         video!.src = playable;
         try {
           await video!.play();
         } catch {
-          // autoplay may be blocked; controls remain available
+          // Unmuted autoplay may be blocked; controls remain available
         }
         return;
       }
@@ -101,10 +102,11 @@ export function HlsPlayer({
         instance.loadSource(playable);
         instance.attachMedia(video!);
         instance.on(Hls.Events.MANIFEST_PARSED, async () => {
+          video!.muted = false;
           try {
             await video!.play();
           } catch {
-            /* ignore autoplay block */
+            /* unmuted autoplay may be blocked */
           }
         });
         hls = instance;
@@ -113,6 +115,7 @@ export function HlsPlayer({
 
       // Safari / iOS native HLS fallback
       if (video!.canPlayType("application/vnd.apple.mpegurl")) {
+        video!.muted = false;
         video!.src = playable;
         try {
           await video!.play();
@@ -166,7 +169,6 @@ export function HlsPlayer({
         controls
         playsInline
         autoPlay
-        muted
         poster={poster}
       />
       {advancing ? (
