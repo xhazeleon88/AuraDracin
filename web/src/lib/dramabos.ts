@@ -29,7 +29,8 @@ const PROVIDER_HOST: Record<string, string> = {
   flickreels: "https://flickreels.goodbos.online",
   dramabite: "https://dramabite.goodbos.online",
   idrama: "https://idrama.goodbos.online",
-  flareflow: "https://flareflow.goodbos.online",
+  // FlareFlow upstream is served via plerplow host (flareflow.* 404s detail/stream).
+  flareflow: "https://plerplow.goodbos.online",
   pinedrama: "https://pinedrama.goodbos.online",
   golddrama: "https://golddrama.goodbos.online",
   melolo: "https://melolo.goodbos.online",
@@ -64,11 +65,29 @@ export const CATALOG_PROVIDERS = [
 /**
  * Providers with working watch pages + stream playback.
  * Homepage / search / kategori only surface these so users don't hit 404s.
+ * Skip vigloo for now — CloudFront cookies needed in the stream proxy.
  */
-export const PLAYABLE_PROVIDERS = ["reelshort", "goodshort"] as const;
+export const PLAYABLE_PROVIDERS = [
+  "reelshort",
+  "goodshort",
+  "shortmax",
+  "dramawave",
+  "idrama",
+  "dramabox",
+  "netshort",
+  "melolo",
+  "flickreels",
+  "pinedrama",
+  "golddrama",
+  "freereels",
+  "fundrama",
+  "microdrama",
+  "happyshort",
+  "flareflow",
+] as const;
 
-/** Featured studio rails — same as playable today. */
-export const FEATURED_STUDIO_PROVIDERS = PLAYABLE_PROVIDERS;
+/** Featured studio rails — dedicated 25+25 rails / Unggulan pin behavior. */
+export const FEATURED_STUDIO_PROVIDERS = ["reelshort", "goodshort"] as const;
 
 export function isPlayableProvider(provider: string) {
   return (PLAYABLE_PROVIDERS as readonly string[]).includes(provider);
@@ -186,6 +205,10 @@ function asArray(input: unknown): Record<string, unknown>[] {
     "payloads",
     "hot_drama_list",
     "searchCodeSearchResult",
+    "guess_plays",
+    "videos",
+    "episode_list",
+    "shortPlayEpisodeList",
   ]) {
     if (Array.isArray(obj[key])) return obj[key] as Record<string, unknown>[];
   }
@@ -315,21 +338,22 @@ function normalizeCard(
     return normalizeCard(row.info as Record<string, unknown>, provider, opts);
   }
 
-  // GoodShort home items expose bookId (real drama id) and a separate list id
+  // GoodShort home items expose bookId (real drama id) and a separate list id.
+  // Other providers use playlet_id / collection_id / shortplay_id / key / dshame, etc.
   const id =
     provider === "goodshort"
-      ? pickString(row, ["bookId", "action", "id", "dramaId"])
+      ? pickString(row, ["bookId", "action", "id", "dramaId", "shortPlayId"])
       : pickString(row, [
           "id",
           "bookId",
           "action",
           "dramaId",
+          "playlet_id",
+          "collection_id",
           "shortplay_id",
           "shortPlayId",
-          "collection_id",
-          "playlet_id",
           "file_id",
-          "key",
+          "key", // freereels series key
           "dshame", // fundrama obfuscated id
         ]);
   // Do NOT use `tags` as title — GoodShort /hot returns hot-words with tags=title and no cover.
@@ -356,6 +380,8 @@ function normalizeCard(
       "synopsis",
       "description",
       "introduce",
+      "intro",
+      "summary",
       "logLine",
       "dentra", // fundrama obfuscated synopsis
     ]),
@@ -971,6 +997,121 @@ export async function getByGenre(
   return [];
 }
 
+function syntheticEpisodes(base: DramaCard, count?: number) {
+  const n = Math.max(1, count || base.episodeCount || 12);
+  return Array.from({ length: n }, (_, i) => ({
+    id: `${base.id}-ep-${i + 1}`,
+    number: i + 1,
+    title: `Episode ${i + 1}`,
+    thumbnail: base.cover,
+  }));
+}
+
+function mapEpisodeRows(
+  rows: Record<string, unknown>[],
+  base: DramaCard,
+  opts?: {
+    idKeys?: string[];
+    titleKeys?: string[];
+    numberKeys?: string[];
+    /** When true, treat `index` as 0-based (GoodShort style). */
+    zeroBasedIndex?: boolean;
+  },
+) {
+  const idKeys = opts?.idKeys || ["id", "episodeId", "chapterId"];
+  const titleKeys = opts?.titleKeys || ["name", "title", "chapterName", "episodeName"];
+  const numberKeys = opts?.numberKeys || ["episode", "number", "serial_number", "index"];
+  return rows.map((ep, index) => {
+    let number = pickNumber(ep, numberKeys);
+    if (typeof number === "number" && opts?.zeroBasedIndex && numberKeys.includes("index")) {
+      const idx = pickNumber(ep, ["index"]);
+      if (typeof idx === "number" && idx === number) number = idx + 1;
+    }
+    if (typeof number !== "number") number = index + 1;
+    return {
+      id: pickString(ep, idKeys) || `${base.id}-ep-${number}`,
+      number,
+      title: pickString(ep, titleKeys) || `Episode ${number}`,
+      thumbnail: pickString(ep, ["cover", "image", "thumbnail", "pic"]) || base.cover,
+      locked: Boolean(ep.locked || ep.is_lock || ep.isLock || Number(ep.price || 0) > 0),
+    };
+  });
+}
+
+function unwrapData(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== "object") return {};
+  const root = data as Record<string, unknown>;
+  if (root.data && typeof root.data === "object" && !Array.isArray(root.data)) {
+    return root.data as Record<string, unknown>;
+  }
+  return root;
+}
+
+function cardFromRow(
+  provider: string,
+  row: Record<string, unknown>,
+  fallbackId: string,
+): DramaCard | null {
+  const base =
+    normalizeCard(row, provider, { requireCover: false }) ||
+    normalizeCard({ ...row, id: fallbackId }, provider, { requireCover: false });
+  if (base) return { ...base, id: base.id || fallbackId };
+  const title = pickString(row, [
+    "title",
+    "bookName",
+    "name",
+    "shortPlayName",
+    "short_play_name",
+    "nsin",
+  ]);
+  if (!title) return null;
+  return {
+    id: fallbackId,
+    provider,
+    title,
+    cover: pickCover(row),
+    synopsis: pickString(row, [
+      "desc",
+      "introduction",
+      "synopsis",
+      "description",
+      "introduce",
+      "intro",
+      "summary",
+      "dentra",
+    ]),
+    episodeCount: pickNumber(row, [
+      "chapters",
+      "chapterCount",
+      "episodes",
+      "totalEpisodes",
+      "total_episodes",
+      "episodeCount",
+      "episode_count",
+      "upload_num",
+    ]),
+    category: pickString(row, ["genre", "category", "label", "categories", "series_tag"]) || "romance",
+    likes: pickNumber(row, ["likeCount", "likes", "favorites", "favor_count", "collect_count"]),
+    views: pickNumber(row, ["viewCount", "views", "view", "playCount"]),
+    source: "dramabos",
+  };
+}
+
+async function finishDetail(
+  provider: string,
+  base: DramaCard,
+  episodes: ReturnType<typeof mapEpisodeRows>,
+  synopsisExtra?: string,
+): Promise<DramaDetail> {
+  return localizeDetail({
+    ...base,
+    synopsis: base.synopsis || synopsisExtra || "",
+    episodeCount: episodes.length || base.episodeCount,
+    episodes: episodes.length > 0 ? episodes : syntheticEpisodes(base),
+    hashtags: ["dracin", provider, String(base.category || "romance")],
+  });
+}
+
 /** Drama API + Episode API */
 export async function getDramaDetail(
   provider: string,
@@ -978,11 +1119,12 @@ export async function getDramaDetail(
 ): Promise<DramaDetail | null> {
   const host = hostFor(provider);
   const basePath = providerBase(provider);
+  const encoded = encodeURIComponent(id);
 
   if (provider === "goodshort") {
-    const detailRes = await fetchJson(`${host}/book/${encodeURIComponent(id)}?lang=${LANG === "id" ? "in" : LANG}`);
+    const detailRes = await fetchJson(`${host}/book/${encoded}?lang=${LANG === "id" ? "in" : LANG}`);
     const chapterRes = await fetchJson(
-      withCode(`${host}/chapters/${encodeURIComponent(id)}?lang=${LANG === "id" ? "in" : LANG}`),
+      withCode(`${host}/chapters/${encoded}?lang=${LANG === "id" ? "in" : LANG}`),
     );
 
     if (detailRes.ok && detailRes.data) {
@@ -1014,19 +1156,373 @@ export async function getDramaDetail(
         });
       }
     }
-  } else {
+  }
+
+  // --- Provider-specific detail paths (before generic fallbacks) ---
+
+  if (provider === "shortmax") {
+    const detailRes = await fetchJson(withCode(`${host}/api/v1/detail/${encoded}`));
+    const epsRes = await fetchJson(withCode(`${host}/api/v1/alleps/${encoded}`));
+    if (detailRes.ok && detailRes.data) {
+      const data = unwrapData(detailRes.data);
+      const base = cardFromRow(provider, data, id);
+      if (base) {
+        const epsPayload = unwrapData(epsRes.data);
+        const rows = asArray(epsPayload.episodes || epsRes.data);
+        return finishDetail(
+          provider,
+          base,
+          mapEpisodeRows(rows, base, { numberKeys: ["episode", "number"] }),
+          pickString(data, ["summary", "desc"]),
+        );
+      }
+    }
+  }
+
+  if (provider === "dramawave") {
+    const res = await fetchJson(withCode(`${host}/api/drama/${encoded}`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const base = cardFromRow(provider, data, id);
+      if (base) {
+        const rows = asArray(data.items || data);
+        return finishDetail(
+          provider,
+          { ...base, episodeCount: base.episodeCount || rows.length },
+          mapEpisodeRows(rows, base, {
+            numberKeys: ["serial_number", "episode", "number"],
+            titleKeys: ["name", "title"],
+          }),
+          pickString(data, ["desc", "description"]),
+        );
+      }
+    }
+  }
+
+  if (provider === "idrama") {
+    const res = await fetchJson(withCode(`${host}/drama/${encoded}`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const row = {
+        ...data,
+        id,
+        name: pickString(data, ["short_play_name", "name", "title"]),
+        cover: pickCover(data) || pickString(data, ["cover_url", "compress_cover_url"]),
+        synopsis: pickString(data, ["introduction", "desc", "summary"]),
+      };
+      const base = cardFromRow(provider, row, id);
+      if (base) {
+        const rows = asArray(data.episode_list || data);
+        return finishDetail(
+          provider,
+          base,
+          mapEpisodeRows(rows, base, {
+            idKeys: ["id", "episode_id"],
+            titleKeys: ["name", "title", "episode_name"],
+          }),
+          pickString(data, ["introduction"]),
+        );
+      }
+    }
+  }
+
+  if (provider === "dramabox") {
+    const detailRes = await fetchJson(withCode(`${host}/api/v1/detail?bookId=${encoded}`));
+    if (detailRes.ok && detailRes.data) {
+      const data = unwrapData(detailRes.data);
+      const book =
+        data.book && typeof data.book === "object"
+          ? (data.book as Record<string, unknown>)
+          : data;
+      const row = {
+        ...book,
+        id: pickString(book, ["bookId", "id"]) || id,
+        bookName: pickString(book, ["bookName", "name", "title"]),
+        cover: pickCover(book),
+        introduction: pickString(book, ["introduction", "desc", "summary"]),
+      };
+      const base = cardFromRow(provider, row, id);
+      if (base) {
+        let rows = asArray(data.chapters || data.episodes || data.chapterList);
+        if (!rows.length) {
+          const epsRes = await fetchJson(
+            withCode(`${host}/api/v1/allepisode?bookId=${encoded}`),
+          );
+          rows = asArray(epsRes.data);
+        }
+        return finishDetail(
+          provider,
+          base,
+          mapEpisodeRows(rows, base, {
+            idKeys: ["chapterId", "id"],
+            titleKeys: ["chapterName", "name", "title"],
+          }),
+          pickString(book, ["introduction"]),
+        );
+      }
+    }
+  }
+
+  if (provider === "netshort") {
+    const res = await fetchJson(withCode(`${host}/api/drama/${encoded}`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const row = {
+        ...data,
+        id,
+        name: pickString(data, ["shortPlayName", "name", "title"]),
+        cover: pickString(data, ["shortPlayCover", "cover", "pic"]),
+        synopsis: pickString(data, ["introduction", "desc", "summary", "introduce"]),
+      };
+      const base = cardFromRow(provider, row, id);
+      if (base) {
+        const rows = asArray(data.shortPlayEpisodeList || data);
+        return finishDetail(
+          provider,
+          base,
+          mapEpisodeRows(rows, base, {
+            idKeys: ["id", "episodeId"],
+            titleKeys: ["name", "title", "episodeName"],
+          }),
+        );
+      }
+    }
+  }
+
+  if (provider === "melolo") {
+    const res = await fetchJson(withCode(`${host}/api/detail/${encoded}?lang=id`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const row = {
+        ...data,
+        id,
+        title: pickString(data, ["title", "name"]),
+        cover: pickCover(data),
+        intro: pickString(data, ["intro", "introduction", "desc", "summary"]),
+      };
+      const base = cardFromRow(provider, row, id);
+      if (base) {
+        const rows = asArray(data.videos || data.episodes || data);
+        return finishDetail(
+          provider,
+          { ...base, episodeCount: base.episodeCount || rows.length },
+          mapEpisodeRows(rows, base),
+          pickString(data, ["intro", "introduction"]),
+        );
+      }
+    }
+  }
+
+  if (provider === "flickreels") {
+    const res = await fetchJson(withCode(`${host}/batchload/${encoded}?lang=en`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const row = {
+        ...data,
+        id,
+        title: pickString(data, ["title", "name"]),
+        cover: pickString(data, ["cover", "pic", "image"]),
+        introduce: pickString(data, ["introduce", "introduction", "desc", "summary"]),
+      };
+      const base = cardFromRow(provider, row, id);
+      if (base) {
+        const rows = asArray(data.list || data.episodes || data);
+        return finishDetail(
+          provider,
+          base,
+          mapEpisodeRows(rows, base, {
+            numberKeys: ["episode", "number", "index"],
+          }),
+          pickString(data, ["introduce"]),
+        );
+      }
+    }
+  }
+
+  if (provider === "pinedrama") {
+    const res = await fetchJson(withCode(`${host}/detail?id=${encoded}`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const row = {
+        ...data,
+        id,
+        title: pickString(data, ["title", "name"]),
+        cover: pickCover(data),
+        description: pickString(data, ["description", "desc", "introduction", "summary"]),
+      };
+      const base = cardFromRow(provider, row, id);
+      if (base) {
+        const rows = asArray(data.episodes || data.list || data);
+        return finishDetail(
+          provider,
+          base,
+          mapEpisodeRows(rows, base),
+          pickString(data, ["description"]),
+        );
+      }
+    }
+  }
+
+  if (provider === "golddrama") {
+    const res = await fetchJson(
+      withCode(`${host}/detail?shortplay_id=${encoded}&index=1&count=50&lang=id`),
+    );
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const rows = asArray(data.episodes || data.list || data);
+      const first = rows[0] || data;
+      const row = {
+        ...data,
+        id,
+        title:
+          pickString(data, ["title", "name", "shortplay_name", "short_play_name"]) ||
+          pickString(first as Record<string, unknown>, ["title", "name", "shortplay_name"]),
+        cover:
+          pickCover(data) ||
+          pickCover(first as Record<string, unknown>) ||
+          pickString(first as Record<string, unknown>, ["cover", "pic"]),
+        description: pickString(data, ["description", "desc", "introduction", "summary"]),
+      };
+      const base = cardFromRow(provider, row, id);
+      if (base) {
+        return finishDetail(
+          provider,
+          { ...base, episodeCount: base.episodeCount || rows.length },
+          mapEpisodeRows(rows, base, {
+            numberKeys: ["index", "episode", "number"],
+            zeroBasedIndex: true,
+          }),
+        );
+      }
+    }
+  }
+
+  if (provider === "freereels") {
+    const res = await fetchJson(withCode(`${basePath}/drama/${encoded}?lang=en`));
+    if (res.ok && res.data) {
+      const root = res.data as Record<string, unknown>;
+      // Nested: data.data.info
+      let info: Record<string, unknown> = unwrapData(res.data);
+      if (info.data && typeof info.data === "object") {
+        const deeper = info.data as Record<string, unknown>;
+        if (deeper.info && typeof deeper.info === "object") {
+          info = deeper.info as Record<string, unknown>;
+        } else {
+          info = deeper;
+        }
+      } else if (info.info && typeof info.info === "object") {
+        info = info.info as Record<string, unknown>;
+      }
+      void root;
+      const base = cardFromRow(provider, { ...info, id, key: id }, id);
+      if (base) {
+        const rows = asArray(
+          (info as Record<string, unknown>).episodes ||
+            (info as Record<string, unknown>).list ||
+            info,
+        );
+        return finishDetail(provider, base, mapEpisodeRows(rows, base));
+      }
+    }
+  }
+
+  if (provider === "fundrama") {
+    const res = await fetchJson(withCode(`${basePath}/drama/${encoded}`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const nested =
+        data.data && typeof data.data === "object"
+          ? (data.data as Record<string, unknown>)
+          : data;
+      const info =
+        nested.info && typeof nested.info === "object"
+          ? (nested.info as Record<string, unknown>)
+          : nested;
+      const row = {
+        ...info,
+        id: pickString(info, ["dshame", "id", "key"]) || id,
+        title: pickString(info, ["nsin", "title", "name", "bookName"]),
+        cover: pickCover(info),
+        synopsis: pickString(info, ["dentra", "desc", "introduction", "summary"]),
+      };
+      const base = cardFromRow(provider, row, id);
+      if (base) {
+        const rows = asArray(info.episodes || nested.episodes || data.episodes);
+        return finishDetail(provider, base, mapEpisodeRows(rows, base));
+      }
+    }
+  }
+
+  if (provider === "microdrama") {
+    const res = await fetchJson(withCode(`${basePath}/drama/${encoded}?lang=en`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const nested =
+        data.data && typeof data.data === "object"
+          ? (data.data as Record<string, unknown>)
+          : data;
+      const info =
+        nested.info && typeof nested.info === "object"
+          ? (nested.info as Record<string, unknown>)
+          : nested;
+      const base = cardFromRow(provider, { ...info, id }, id);
+      if (base) {
+        const rows = asArray(info.episodes || nested.episodes || data.episodes);
+        return finishDetail(provider, base, mapEpisodeRows(rows, base));
+      }
+    }
+  }
+
+  if (provider === "happyshort") {
+    const detailRes = await fetchJson(
+      withCode(`${host}/api/hs/detail?id=${encoded}&lang=en`),
+    );
+    const epsRes = await fetchJson(withCode(`${host}/api/hs/episodes?id=${encoded}`));
+    if (detailRes.ok && detailRes.data) {
+      const data = unwrapData(detailRes.data);
+      const base = cardFromRow(provider, { ...data, id }, id);
+      if (base) {
+        const rows = asArray(unwrapData(epsRes.data).episodes || epsRes.data);
+        return finishDetail(
+          provider,
+          base,
+          mapEpisodeRows(rows, base, {
+            idKeys: ["id", "episode_id", "episodeId"],
+            titleKeys: ["name", "title", "episode_name"],
+          }),
+        );
+      }
+    }
+  }
+
+  if (provider === "flareflow") {
+    const res = await fetchJson(withCode(`${host}/api/detail?id=${encoded}&lang=id`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const base = cardFromRow(provider, { ...data, id }, id);
+      if (base) {
+        const rows = asArray(data.episodes || data.list || data.videos || data);
+        return finishDetail(provider, base, mapEpisodeRows(rows, base));
+      }
+    }
+  }
+
+  // Generic fallbacks (reelshort + unknown providers)
+  {
     const lang = feedLang(provider);
     const detailPaths = [
-      `${basePath}/detail/${encodeURIComponent(id)}?lang=${lang}`,
-      withCode(`${basePath}/detail/${encodeURIComponent(id)}?lang=${lang}`),
-      withCode(`${basePath}/drama/${encodeURIComponent(id)}?lang=${lang}`),
-      withCode(`${basePath}/book/${encodeURIComponent(id)}?lang=${lang}`),
-      `${host}/detail/${encodeURIComponent(id)}?lang=${lang}`,
+      `${basePath}/detail/${encoded}?lang=${lang}`,
+      withCode(`${basePath}/detail/${encoded}?lang=${lang}`),
+      withCode(`${basePath}/drama/${encoded}?lang=${lang}`),
+      withCode(`${basePath}/book/${encoded}?lang=${lang}`),
+      withCode(`${host}/allepisodes/${encoded}?lang=${lang}`),
+      `${host}/detail/${encoded}?lang=${lang}`,
     ];
     const chapterPaths = [
-      withCode(`${basePath}/chapters/${encodeURIComponent(id)}?lang=${lang}`),
-      withCode(`${host}/chapters/${encodeURIComponent(id)}?lang=${lang}`),
-      withCode(`${basePath}/drama/${encodeURIComponent(id)}?lang=${lang}`),
+      withCode(`${basePath}/chapters/${encoded}?lang=${lang}`),
+      withCode(`${host}/chapters/${encoded}?lang=${lang}`),
+      withCode(`${basePath}/drama/${encoded}?lang=${lang}`),
+      withCode(`${host}/allepisodes/${encoded}?lang=${lang}`),
     ];
 
     let detailRes: { ok: boolean; data?: unknown } = { ok: false };
@@ -1049,31 +1545,19 @@ export async function getDramaDetail(
           : row;
       const base =
         normalizeCard(nested, provider, { requireCover: false }) ||
-        normalizeCard(row, provider, { requireCover: false });
+        normalizeCard(row, provider, { requireCover: false }) ||
+        cardFromRow(provider, nested, id);
       if (base) {
         const chapterRows = asArray(
-          (chapterRes.data as Record<string, unknown> | undefined)?.chapters || chapterRes.data,
+          (chapterRes.data as Record<string, unknown> | undefined)?.chapters ||
+            (chapterRes.data as Record<string, unknown> | undefined)?.episodes ||
+            chapterRes.data,
         );
-        const episodes = chapterRows.map((ep, index) => ({
-          id: pickString(ep, ["id"]) || `${base.id}-ep-${index + 1}`,
-          number: index + 1,
-          title: pickString(ep, ["name", "title"]) || `Episode ${index + 1}`,
-          thumbnail: base.cover,
-          locked: Boolean(ep.is_lock),
-        }));
-
+        const episodes = mapEpisodeRows(chapterRows, base);
         return localizeDetail({
           ...base,
           synopsis: base.synopsis || pickString(nested, ["desc", "introduction", "description"]),
-          episodes:
-            episodes.length > 0
-              ? episodes
-              : Array.from({ length: base.episodeCount || 12 }, (_, i) => ({
-                  id: `${base.id}-ep-${i + 1}`,
-                  number: i + 1,
-                  title: `Episode ${i + 1}`,
-                  thumbnail: base.cover,
-                })),
+          episodes: episodes.length > 0 ? episodes : syntheticEpisodes(base),
           hashtags: ["dracin", provider, String(base.category || "romance")],
         });
       }
@@ -1083,6 +1567,18 @@ export async function getDramaDetail(
   return null;
 }
 
+function streamFromUrl(
+  url: string,
+  quality?: string,
+  forceType?: "hls" | "mp4",
+): StreamResult | null {
+  if (!url) return null;
+  const type =
+    forceType ||
+    (url.includes(".m3u8") || url.includes("/hls/") ? "hls" : "mp4");
+  return { url, quality: quality || undefined, type };
+}
+
 /** Streaming API + Download/CDN API */
 export async function getStream(
   provider: string,
@@ -1090,6 +1586,8 @@ export async function getStream(
   ep = 1,
 ): Promise<StreamResult | null> {
   const host = hostFor(provider);
+  const basePath = providerBase(provider);
+  const encoded = encodeURIComponent(id);
   const key = accessCode();
 
   if (provider === "goodshort") {
@@ -1097,7 +1595,7 @@ export async function getStream(
     // keys as data: URIs. Raw acfs1 playlists use local://offline-key which
     // browsers cannot decrypt.
     const batch = await fetchJson(
-      withCode(`${host}/batchload/${encodeURIComponent(id)}?lang=${LANG === "id" ? "in" : LANG}`),
+      withCode(`${host}/batchload/${encoded}?lang=${LANG === "id" ? "in" : LANG}`),
     );
     if (batch.ok) {
       const payload =
@@ -1139,7 +1637,7 @@ export async function getStream(
     }
 
     // Fallback: rawurl (often encrypted with local:// keys — may not play)
-    const raw = await fetchJson(withCode(`${host}/rawurl/${encodeURIComponent(id)}`));
+    const raw = await fetchJson(withCode(`${host}/rawurl/${encoded}`));
     if (raw.ok) {
       const payload =
         raw.data && typeof raw.data === "object"
@@ -1153,7 +1651,7 @@ export async function getStream(
       const chapterId = pickString((target || {}) as Record<string, unknown>, ["id"]);
       if (chapterId) {
         return {
-          url: `${host}/hls/${encodeURIComponent(chapterId)}?bookId=${encodeURIComponent(id)}&q=720p`,
+          url: `${host}/hls/${encodeURIComponent(chapterId)}?bookId=${encoded}&q=720p`,
           quality: "720p",
           type: "hls",
         };
@@ -1172,14 +1670,12 @@ export async function getStream(
         };
       }
     }
-  } else {
-    // ReelShort: allepisodes returns streams[]
+    return null;
+  }
+
+  if (provider === "reelshort") {
     // Prefer 540p / -ld H.264 — 720p+ is often HEVC (hvc1) which Chrome MSE cannot play.
-    const all = await fetchJson(
-      withCode(
-        `${host}/allepisodes/${encodeURIComponent(id)}?lang=${provider === "reelshort" ? "en" : LANG}`,
-      ),
-    );
+    const all = await fetchJson(withCode(`${host}/allepisodes/${encoded}?lang=en`));
     if (all.ok) {
       const root = all.data as Record<string, unknown> | undefined;
       const nested =
@@ -1209,6 +1705,248 @@ export async function getStream(
           };
         }
       }
+    }
+    return null;
+  }
+
+  if (provider === "shortmax") {
+    const res = await fetchJson(withCode(`${host}/api/v1/alleps/${encoded}`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const episodes = asArray(data.episodes || res.data);
+      const target =
+        episodes.find((row) => pickNumber(row, ["episode", "number"]) === ep) || episodes[ep - 1];
+      if (target) {
+        const video =
+          target.video && typeof target.video === "object"
+            ? (target.video as Record<string, unknown>)
+            : target;
+        const url =
+          pickString(video, ["video_720"]) ||
+          pickString(video, ["video_480"]) ||
+          pickString(video, ["video_1080"]) ||
+          pickString(video, ["url", "play_url", "m3u8"]);
+        return streamFromUrl(
+          url,
+          url.includes("720") ? "720p" : url.includes("480") ? "480p" : url.includes("1080") ? "1080p" : undefined,
+        );
+      }
+    }
+  }
+
+  if (provider === "dramawave") {
+    const res = await fetchJson(withCode(`${host}/api/drama/${encoded}`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const items = asArray(data.items || data);
+      const target =
+        items.find((row) => pickNumber(row, ["serial_number", "episode", "number"]) === ep) ||
+        items[ep - 1];
+      if (target) {
+        const url =
+          pickString(target, ["m3u8_path"]) ||
+          pickString(target, ["720p_mp4", "540p_mp4", "1080p_mp4", "url"]);
+        return streamFromUrl(url);
+      }
+    }
+  }
+
+  if (provider === "idrama") {
+    const res = await fetchJson(withCode(`${host}/drama/${encoded}`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const list = asArray(data.episode_list || data);
+      const target = list[ep - 1];
+      if (target) {
+        return streamFromUrl(pickString(target, ["play_url", "playUrl", "url", "m3u8"]));
+      }
+    }
+  }
+
+  if (provider === "dramabox") {
+    const res = await fetchJson(withCode(`${host}/api/v1/allepisode?bookId=${encoded}`));
+    if (res.ok && res.data) {
+      const list = asArray(res.data);
+      const target =
+        list.find((row) => pickNumber(row, ["chapterIndex", "index", "episode", "number"]) === ep) ||
+        list[ep - 1];
+      if (target) {
+        return streamFromUrl(
+          pickString(target, ["videoUrl", "playUrl", "url", "cdn"]),
+          undefined,
+          "mp4",
+        );
+      }
+    }
+  }
+
+  if (provider === "netshort") {
+    const res = await fetchJson(withCode(`${host}/api/drama/${encoded}`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const list = asArray(data.shortPlayEpisodeList || data);
+      const target = list[ep - 1];
+      if (target) {
+        return streamFromUrl(
+          pickString(target, ["playVoucher", "playUrl", "url", "videoUrl"]),
+          undefined,
+          "mp4",
+        );
+      }
+    }
+  }
+
+  if (provider === "melolo") {
+    const res = await fetchJson(
+      withCode(`${host}/api/video?id=${encoded}&ep=${encodeURIComponent(String(ep))}`),
+    );
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      return streamFromUrl(pickString(data, ["videoUrl", "url", "playUrl", "m3u8"]));
+    }
+  }
+
+  if (provider === "flickreels") {
+    const res = await fetchJson(withCode(`${host}/batchload/${encoded}?lang=en`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const list = asArray(data.list || data.episodes || data);
+      const target =
+        list.find((row) => pickNumber(row, ["episode", "number", "index"]) === ep) || list[ep - 1];
+      if (target) {
+        return streamFromUrl(
+          pickString(target, ["hls_url", "url", "play_url", "m3u8"]),
+          undefined,
+          "hls",
+        );
+      }
+    }
+  }
+
+  if (provider === "pinedrama") {
+    const res = await fetchJson(
+      withCode(`${host}/episode?id=${encoded}&ep=${encodeURIComponent(String(ep))}`),
+    );
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      return streamFromUrl(pickString(data, ["best_url", "url", "play_url", "videoUrl"]), undefined, "mp4");
+    }
+  }
+
+  if (provider === "golddrama") {
+    const res = await fetchJson(
+      withCode(`${host}/detail?shortplay_id=${encoded}&index=1&count=50&lang=id`),
+    );
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const list = asArray(data.episodes || data);
+      const target =
+        list.find((row) => pickNumber(row, ["index", "episode", "number"]) === ep) || list[ep - 1];
+      if (target) {
+        const playInfo = asArray(target.play_info_list);
+        const first = playInfo[0];
+        const url =
+          (first && pickString(first, ["MainPlayUrl", "main_play_url", "play_url", "url"])) ||
+          pickString(target, ["play_url", "url", "m3u8"]);
+        return streamFromUrl(url);
+      }
+    }
+  }
+
+  if (provider === "freereels") {
+    const res = await fetchJson(
+      withCode(`${basePath}/drama/${encoded}/play/${encodeURIComponent(String(ep))}`),
+    );
+    if (res.ok && res.data) {
+      let data = unwrapData(res.data);
+      if (data.data && typeof data.data === "object") {
+        data = data.data as Record<string, unknown>;
+      }
+      return streamFromUrl(
+        pickString(data, [
+          "external_audio_h264_m3u8",
+          "m3u8",
+          "url",
+          "play_url",
+          "hls_url",
+        ]),
+        undefined,
+        "hls",
+      );
+    }
+  }
+
+  if (provider === "fundrama") {
+    const res = await fetchJson(withCode(`${basePath}/drama/${encoded}/episodes`));
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const list = asArray(data.episodes || data);
+      const target =
+        list.find((row) => pickNumber(row, ["episode", "number", "index"]) === ep) || list[ep - 1];
+      if (target) {
+        const videos = asArray(target.videos);
+        const best =
+          videos.find((v) => /720/i.test(pickString(v, ["quality", "definition", "type", "label"]))) ||
+          videos[0];
+        return streamFromUrl(
+          pickString((best || target) as Record<string, unknown>, ["url", "play_url", "m3u8"]),
+          pickString((best || {}) as Record<string, unknown>, ["quality", "definition"]) || "720P",
+        );
+      }
+    }
+  }
+
+  if (provider === "microdrama") {
+    const res = await fetchJson(
+      withCode(`${basePath}/play/${encoded}/${encodeURIComponent(String(ep))}`),
+    );
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const videos = asArray(data.videos || data);
+      const best =
+        videos.find((v) => /720/i.test(pickString(v, ["quality", "definition", "type", "label"]))) ||
+        videos[0];
+      return streamFromUrl(
+        pickString((best || data) as Record<string, unknown>, ["url", "play_url", "m3u8"]),
+        pickString((best || {}) as Record<string, unknown>, ["quality", "definition"]) || "720P",
+      );
+    }
+  }
+
+  if (provider === "happyshort") {
+    const epsRes = await fetchJson(withCode(`${host}/api/hs/episodes?id=${encoded}`));
+    if (epsRes.ok && epsRes.data) {
+      const list = asArray(unwrapData(epsRes.data).episodes || epsRes.data);
+      const target =
+        list.find((row) => pickNumber(row, ["episode", "number", "index"]) === ep) || list[ep - 1];
+      const episodeId =
+        pickString(target || {}, ["id", "episode_id", "episodeId"]) || String(ep);
+      const play = await fetchJson(
+        withCode(
+          `${host}/api/hs/play?id=${encoded}&ep=${encodeURIComponent(episodeId)}`,
+        ),
+      );
+      if (play.ok && play.data) {
+        const data = unwrapData(play.data);
+        return streamFromUrl(pickString(data, ["cdn_url", "url", "play_url", "m3u8"]));
+      }
+    }
+  }
+
+  if (provider === "flareflow") {
+    const res = await fetchJson(
+      withCode(`${host}/api/episode?id=${encoded}&ep=${encodeURIComponent(String(ep))}`),
+    );
+    if (res.ok && res.data) {
+      const data = unwrapData(res.data);
+      const qualities =
+        data.qualities && typeof data.qualities === "object"
+          ? (data.qualities as Record<string, unknown>)
+          : data;
+      const url =
+        pickString(qualities, ["720p", "480p", "1080p", "360p"]) ||
+        pickString(data, ["url", "play_url", "m3u8", "cdn_url"]);
+      return streamFromUrl(url, url.includes("720") ? "720p" : undefined);
     }
   }
 

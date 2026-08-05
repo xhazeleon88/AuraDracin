@@ -87,7 +87,7 @@ export default async function HomePage({
     );
   }
 
-  // Only ReelShort + GoodShort today — other studio feeds list titles that 404 on open.
+  // Featured studios first; remaining playable providers fill extra rails.
   const [catalogRaw, ...providerBatches] = await Promise.all([
     getHomepageCatalog(240),
     ...PLAYABLE_PROVIDERS.map(async (provider) => {
