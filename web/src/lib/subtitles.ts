@@ -47,10 +47,6 @@ function run(cmd: string, args: string[], timeoutMs = 180000): Promise<{ code: n
   });
 }
 
-function vttHasCues(vtt: string) {
-  return /\d{2}:\d{2}:\d{2}\.\d{3}\s+-->\s+\d{2}:\d{2}:\d{2}\.\d{3}/.test(vtt);
-}
-
 function toVttTime(seconds: number) {
   const ms = Math.max(0, Math.round(seconds * 1000));
   const h = Math.floor(ms / 3600000);
