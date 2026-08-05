@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { isPlayableProvider } from "@/lib/dramabos";
 import { listStudioProfiles } from "@/lib/studios";
 
 export const dynamic = "force-dynamic";
 
 export default function StudioIndexPage() {
-  const studios = listStudioProfiles();
+  // Only studios with working playback — others currently 404 on open.
+  const studios = listStudioProfiles().filter((s) => isPlayableProvider(s.id));
 
   return (
     <div className="pb-24">

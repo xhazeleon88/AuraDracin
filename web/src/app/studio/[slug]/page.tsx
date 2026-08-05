@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { VideoCard } from "@/components/video/VideoCard";
-import { getProviderRail } from "@/lib/dramabos";
+import { getProviderRail, isPlayableProvider } from "@/lib/dramabos";
 import { getStudioProfile, isKnownStudio, listStudioProfiles } from "@/lib/studios";
 import { mergeLocalLikes } from "@/lib/videos";
 
@@ -17,10 +17,15 @@ export default async function StudioDetailPage({
   if (!isKnownStudio(id)) notFound();
 
   const studio = getStudioProfile(id);
-  const catalog = mergeLocalLikes(await getProviderRail(id, 48).catch(() => []));
+  const playable = isPlayableProvider(id);
+  const catalog = playable
+    ? mergeLocalLikes(await getProviderRail(id, 48).catch(() => []))
+    : [];
 
   const hero = catalog[0]?.cover || "";
-  const others = listStudioProfiles().filter((s) => s.id !== id).slice(0, 8);
+  const others = listStudioProfiles()
+    .filter((s) => s.id !== id && isPlayableProvider(s.id))
+    .slice(0, 8);
 
   return (
     <div className="pb-24">
@@ -91,7 +96,9 @@ export default async function StudioDetailPage({
           </div>
         ) : (
           <p className="text-muted px-4 pt-3 text-sm">
-            Katalog {studio.name} sedang kosong. Coba studio lain dulu ya.
+            {playable
+              ? `Katalog ${studio.name} sedang kosong. Coba studio lain dulu ya.`
+              : `Streaming ${studio.name} belum tersedia di AuraDracin. Coba ReelShort atau GoodShort dulu ya.`}
           </p>
         )}
       </section>

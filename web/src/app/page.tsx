@@ -6,8 +6,8 @@ import { SearchBar } from "@/components/home/SearchBar";
 import { VideoCard } from "@/components/video/VideoCard";
 import { CATEGORIES } from "@/lib/constants";
 import {
-  CATALOG_PROVIDERS,
   FEATURED_STUDIO_PROVIDERS,
+  PLAYABLE_PROVIDERS,
   buildFeaturedSlides,
   getHomepageCatalog,
   getProviderRail,
@@ -87,11 +87,10 @@ export default async function HomePage({
     );
   }
 
-  // All homepage titles come from DramaBuzz/GoodBos APIs — never local demo seeds.
-  // Featured studios (ReelShort + GoodShort) get a dedicated 25-title rail each.
+  // Only ReelShort + GoodShort today — other studio feeds list titles that 404 on open.
   const [catalogRaw, ...providerBatches] = await Promise.all([
     getHomepageCatalog(240),
-    ...CATALOG_PROVIDERS.map(async (provider) => {
+    ...PLAYABLE_PROVIDERS.map(async (provider) => {
       const items = await getProviderRail(provider, 25).catch(() => []);
       return { provider, items: mergeLocalLikes(items) };
     }),

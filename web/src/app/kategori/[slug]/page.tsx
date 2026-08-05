@@ -2,7 +2,7 @@ import Link from "next/link";
 import { VideoCard } from "@/components/video/VideoCard";
 import { CATEGORIES, categoryLabel } from "@/lib/constants";
 import {
-  CATALOG_PROVIDERS,
+  PLAYABLE_PROVIDERS,
   getByGenre,
   genreQueryForCategory,
 } from "@/lib/dramabos";
@@ -18,7 +18,7 @@ export default async function CategoryPage({
   const { slug } = await params;
   const genre = genreQueryForCategory(slug);
   const batches = await Promise.all(
-    CATALOG_PROVIDERS.map((provider) => getByGenre(genre, provider).catch(() => [])),
+    PLAYABLE_PROVIDERS.map((provider) => getByGenre(genre, provider).catch(() => [])),
   );
   const seen = new Set<string>();
   const items = mergeLocalLikes(

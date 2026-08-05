@@ -38,7 +38,7 @@ const PROVIDER_HOST: Record<string, string> = {
   happyshort: "https://happyshort.goodbos.online",
 };
 
-/** Providers we actively pull homepage/search catalogs from. */
+/** Providers we know how to list in studio directories (feeds may work). */
 export const CATALOG_PROVIDERS = [
   "reelshort",
   "goodshort",
@@ -61,8 +61,18 @@ export const CATALOG_PROVIDERS = [
   "happyshort",
 ] as const;
 
-/** Featured studio rails — always target ~25 live titles each on the homepage. */
-export const FEATURED_STUDIO_PROVIDERS = ["reelshort", "goodshort"] as const;
+/**
+ * Providers with working watch pages + stream playback.
+ * Homepage / search / kategori only surface these so users don't hit 404s.
+ */
+export const PLAYABLE_PROVIDERS = ["reelshort", "goodshort"] as const;
+
+/** Featured studio rails — same as playable today. */
+export const FEATURED_STUDIO_PROVIDERS = PLAYABLE_PROVIDERS;
+
+export function isPlayableProvider(provider: string) {
+  return (PLAYABLE_PROVIDERS as readonly string[]).includes(provider);
+}
 
 const HOME_PAGE_SIZE = 40;
 
@@ -636,11 +646,11 @@ export async function getHomepageCatalog(limit = 120): Promise<DramaCard[]> {
       .filter((p) => p.status === "active" || p.status === "maintenance")
       .map((p) => p.id.toLowerCase()),
   );
-  const providers = CATALOG_PROVIDERS.filter(
+  const providers = PLAYABLE_PROVIDERS.filter(
     (id) =>
       liveIds.size === 0 ||
       liveIds.has(id) ||
-      ["reelshort", "goodshort", "fundrama", "microdrama", "vigloo", "freereels"].includes(id),
+      (PLAYABLE_PROVIDERS as readonly string[]).includes(id),
   );
 
   const queries = ["love", "ceo", "revenge", "baby"];
@@ -662,22 +672,7 @@ export async function getHomepageCatalog(limit = 120): Promise<DramaCard[]> {
 }
 
 /** Providers that usually return usable search hits quickly. */
-export const SEARCH_PROVIDERS = [
-  "reelshort",
-  "goodshort",
-  "netshort",
-  "dramawave",
-  "pinedrama",
-  "golddrama",
-  "idrama",
-  "flickreels",
-  "vigloo",
-  "freereels",
-  "starshort",
-  "microdrama",
-  "fundrama",
-  "dramabite",
-] as const;
+export const SEARCH_PROVIDERS = PLAYABLE_PROVIDERS;
 
 /** Expand Indonesian / slang queries into English API-friendly terms. */
 export function expandSearchQueries(raw: string): string[] {
