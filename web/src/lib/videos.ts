@@ -100,21 +100,30 @@ export function getLocalById(id: string): LocalVideo | null {
   return row ? mapVideo(row) : null;
 }
 
-export function listCityPopular(city: string, limit = 12): LocalVideo[] {
+export function listCityPopularDramaRefs(
+  city: string,
+  limit = 12,
+): { provider: string; id: string }[] {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT v.*, COUNT(vw.id) as city_score
-       FROM videos v
-       LEFT JOIN video_views vw
-         ON vw.target_type = 'local' AND vw.target_id = v.id AND vw.city = ?
-       WHERE v.published = 1 AND v.deleted_at IS NULL
-       GROUP BY v.id
-       ORDER BY city_score DESC, v.like_count DESC
+      `SELECT target_id, COUNT(*) as score
+       FROM video_views
+       WHERE target_type = 'dramabos' AND city = ?
+       GROUP BY target_id
+       ORDER BY score DESC
        LIMIT ?`,
     )
-    .all(city, limit) as VideoRow[];
-  return rows.map(mapVideo);
+    .all(city, limit) as { target_id: string; score: number }[];
+
+  return rows
+    .map((row) => {
+      const [provider, ...rest] = row.target_id.split(":");
+      const id = rest.join(":");
+      if (!provider || !id) return null;
+      return { provider, id };
+    })
+    .filter((row): row is { provider: string; id: string } => Boolean(row));
 }
 
 export function toDramaCard(video: LocalVideo): DramaCard {

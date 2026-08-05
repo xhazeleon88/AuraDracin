@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { VideoCard } from "@/components/video/VideoCard";
 import { CATEGORIES, categoryLabel } from "@/lib/constants";
-import { getByGenre, genreQueryForCategory } from "@/lib/dramabos";
-import { listByCategory, toDramaCard } from "@/lib/videos";
+import {
+  CATALOG_PROVIDERS,
+  getByGenre,
+  genreQueryForCategory,
+} from "@/lib/dramabos";
 
 export const dynamic = "force-dynamic";
 
@@ -13,16 +16,19 @@ export default async function CategoryPage({
 }) {
   const { slug } = await params;
   const genre = genreQueryForCategory(slug);
-  const [remoteRs, remoteGs, local] = await Promise.all([
-    getByGenre(genre, "reelshort"),
-    getByGenre(genre, "goodshort"),
-    listByCategory(slug),
-  ]);
-
-  const items = [...remoteRs, ...remoteGs, ...local.map(toDramaCard)];
+  const batches = await Promise.all(
+    CATALOG_PROVIDERS.map((provider) => getByGenre(genre, provider).catch(() => [])),
+  );
+  const seen = new Set<string>();
+  const items = batches.flat().filter((item) => {
+    const key = `${item.provider}:${item.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
   return (
-    <div className="pb-6">
+    <div className="pb-24">
       <div className="flex items-center gap-3 px-4 py-4">
         <Link href="/" className="icon-btn" aria-label="Kembali">
           <i className="fa-solid fa-chevron-left text-lg" />
@@ -38,7 +44,7 @@ export default async function CategoryPage({
             className="shrink-0 border px-3.5 py-2 text-[13px]"
             style={{
               background: c.slug === slug ? "var(--color-accent)" : "transparent",
-              color: c.slug === slug ? "var(--color-bg)" : "var(--color-text)",
+              color: c.slug === slug ? "#fff" : "var(--color-text)",
               borderColor: c.slug === slug ? "var(--color-accent)" : "var(--color-divider)",
             }}
           >

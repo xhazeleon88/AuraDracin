@@ -1,10 +1,3 @@
-import {
-  DEMO_FEED,
-  genreDemo,
-  getDemoDetail,
-  getDemoStream,
-  searchDemo,
-} from "./demo-dramabos";
 import { translateToBahasa } from "./translate";
 import type { DramaCard, DramaDetail, StreamResult } from "./types";
 
@@ -31,7 +24,32 @@ const PROVIDER_HOST: Record<string, string> = {
   flickreels: "https://flickreels.goodbos.online",
   dramabite: "https://dramabite.goodbos.online",
   idrama: "https://idrama.goodbos.online",
+  flareflow: "https://flareflow.goodbos.online",
+  pinedrama: "https://pinedrama.goodbos.online",
+  golddrama: "https://golddrama.goodbos.online",
+  melolo: "https://melolo.goodbos.online",
+  netshort: "https://netshort.goodbos.online",
+  dramawave: "https://dramawave.goodbos.online",
+  happyshort: "https://happyshort.goodbos.online",
 };
+
+/** Providers we actively pull homepage/search catalogs from. */
+export const CATALOG_PROVIDERS = [
+  "reelshort",
+  "goodshort",
+  "dramabite",
+  "flareflow",
+  "pinedrama",
+  "golddrama",
+  "shortmax",
+  "flickreels",
+  "dramabox",
+  "idrama",
+  "netshort",
+  "dramawave",
+  "melolo",
+  "happyshort",
+] as const;
 
 export type DramabosStatus = {
   mode: "live" | "demo";
@@ -143,7 +161,7 @@ function normalizeCard(row: Record<string, unknown>, provider: string): DramaCar
     id,
     provider,
     title,
-    cover: cover || "/assets/thumbs/v1.jpg",
+    cover: cover || "",
     synopsis: pickString(row, ["desc", "introduction", "synopsis", "description"]),
     episodeCount: pickNumber(row, ["chapters", "chapterCount", "episodes", "totalEpisodes"]),
     category: pickString(row, ["genre", "category", "label"]) || "romance",
@@ -271,16 +289,20 @@ export async function getStatus(): Promise<DramabosStatus> {
 /** Feed & Trending API */
 export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promise<DramaCard[]> {
   const host = hostFor(provider);
-  const paths =
-    provider === "goodshort"
-      ? [
-          `${host}/home?lang=${LANG === "id" ? "in" : LANG}&channelId=-1&page=${page}&size=24`,
-          `${host}/hot?lang=${LANG === "id" ? "in" : LANG}`,
-        ]
-      : [
-          `${host}/trending?lang=${provider === "reelshort" ? "en" : LANG}`,
-          `${host}/search?q=love&lang=en&page=${page}`,
-        ];
+  const lang = provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG;
+  const paths = [
+    `${host}/trending?lang=${lang}`,
+    `${host}/api/trending?lang=${lang}`,
+    withCode(`${host}/trending?lang=${lang}`),
+    withCode(`${host}/api/trending?lang=${lang}`),
+    `${host}/home?lang=${lang}&channelId=-1&page=${page}&size=24`,
+    withCode(`${host}/home?lang=${lang}&channelId=-1&page=${page}&size=24`),
+    `${host}/hot?lang=${lang}`,
+    withCode(`${host}/hot?lang=${lang}`),
+    withCode(`${host}/search?q=love&lang=${lang}&page=${page}`),
+    withCode(`${host}/search?keyword=love&lang=${lang}&page=${page}`),
+    `${host}/search?q=love&lang=${lang}&page=${page}`,
+  ];
 
   for (const path of paths) {
     const res = await fetchJson(path);
@@ -289,41 +311,55 @@ export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promis
     if (cards.length) return localizeCards(cards);
   }
 
-  return localizeCards(DEMO_FEED.map((d) => ({ ...d, provider })));
+  return [];
 }
 
 export async function getLatest(provider = DEFAULT_PROVIDER, page = 1): Promise<DramaCard[]> {
   const host = hostFor(provider);
-  if (provider === "goodshort") {
-    const res = await fetchJson(
-      `${host}/home?lang=${LANG === "id" ? "in" : LANG}&channelId=563&page=${page}&size=24`,
-    );
-    if (res.ok) {
-      const cards = normalizeCards(res.data, provider);
-      if (cards.length) return localizeCards(cards);
-    }
+  const lang = provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG;
+  const paths = [
+    `${host}/home?lang=${lang}&channelId=563&page=${page}&size=24`,
+    `${host}/home?lang=${lang}&channelId=-1&page=${page}&size=24`,
+    withCode(`${host}/search?q=new&lang=${lang}&page=${page}`),
+    withCode(`${host}/search?keyword=new&lang=${lang}&page=${page}`),
+  ];
+  for (const path of paths) {
+    const res = await fetchJson(path);
+    if (!res.ok) continue;
+    const cards = normalizeCards(res.data, provider);
+    if (cards.length) return localizeCards(cards);
   }
   return getTrending(provider, page);
 }
 
-/** Combined ~50 card feed from ReelShort + GoodShort */
-export async function getHomepageCatalog(limit = 50): Promise<DramaCard[]> {
-  const per = Math.ceil(limit / 2);
-  const queries = ["love", "ceo", "revenge", "baby", "billionaire", "wife"];
+/** Pull as many live titles as possible from every working provider. */
+export async function getHomepageCatalog(limit = 120): Promise<DramaCard[]> {
+  const status = await getProviderStatus();
+  const liveIds = new Set(
+    (status.platforms || [])
+      .filter((p) => p.status === "active")
+      .map((p) => p.id.toLowerCase()),
+  );
+  const providers = CATALOG_PROVIDERS.filter(
+    (id) => liveIds.size === 0 || liveIds.has(id) || ["reelshort", "goodshort"].includes(id),
+  );
 
-  const [rsTrend, gsHome, gsHot, ...rsSearches] = await Promise.all([
-    getTrending("reelshort"),
-    getTrending("goodshort", 1),
-    getLatest("goodshort", 1),
-    ...queries.map(async (q) => searchDramas(q, "reelshort")),
-  ]);
+  const queries = ["love", "ceo", "revenge", "baby", "billionaire", "wife", "drama", "romance"];
 
-  const gsPage2 = await getTrending("goodshort", 2);
+  const batches = await Promise.all(
+    providers.map(async (provider) => {
+      const [trend, latest, ...searches] = await Promise.all([
+        getTrending(provider, 1).catch(() => [] as DramaCard[]),
+        getLatest(provider, 1).catch(() => [] as DramaCard[]),
+        ...queries
+          .slice(0, provider === "reelshort" || provider === "goodshort" ? queries.length : 3)
+          .map((q) => searchDramas(q, provider).catch(() => [] as DramaCard[])),
+      ]);
+      return dedupe([...trend, ...latest, ...searches.flat()]);
+    }),
+  );
 
-  const reelshort = dedupe([...rsTrend, ...rsSearches.flat()]).slice(0, per);
-  const goodshort = dedupe([...gsHome, ...gsHot, ...gsPage2]).slice(0, per);
-
-  return dedupe([...reelshort, ...goodshort]).slice(0, limit);
+  return dedupe(batches.flat()).slice(0, limit);
 }
 
 /** Search API */
@@ -332,13 +368,13 @@ export async function searchDramas(q: string, provider = DEFAULT_PROVIDER): Prom
   const host = hostFor(provider);
   const encoded = encodeURIComponent(q.trim());
 
-  const paths =
-    provider === "goodshort"
-      ? [
-          withCode(`${host}/search?keyword=${encoded}&lang=${LANG === "id" ? "in" : LANG}`),
-          withCode(`${host}/search?q=${encoded}&lang=${LANG === "id" ? "in" : LANG}`),
-        ]
-      : [`${host}/search?q=${encoded}&lang=en`];
+  const lang = provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG;
+  const paths = [
+    withCode(`${host}/search?q=${encoded}&lang=${lang}`),
+    withCode(`${host}/search?keyword=${encoded}&lang=${lang}`),
+    `${host}/search?q=${encoded}&lang=${lang}`,
+    `${host}/search?keyword=${encoded}&lang=${lang}`,
+  ];
 
   for (const path of paths) {
     const res = await fetchJson(path);
@@ -347,7 +383,7 @@ export async function searchDramas(q: string, provider = DEFAULT_PROVIDER): Prom
     if (cards.length) return localizeCards(cards);
   }
 
-  return localizeCards(searchDemo(q).map((d) => ({ ...d, provider })));
+  return [];
 }
 
 /** Genre & Category API */
@@ -378,30 +414,21 @@ export async function getByGenre(
   };
   const q = queryMap[type] || type;
 
-  if (provider === "goodshort") {
-    // channel -1 trending often returns mixed genres; use search with 2+ words
-    const res = await fetchJson(
-      withCode(`${host}/search?q=${encodeURIComponent(q)}&lang=in&page=${page}`),
-    );
-    if (res.ok) {
-      const cards = normalizeCards(res.data, provider);
-      if (cards.length) return localizeCards(cards);
-    }
-    const hot = await getTrending("goodshort", page);
-    return hot.filter((c) =>
-      `${c.title} ${c.synopsis} ${c.category}`.toLowerCase().includes(type.toLowerCase().slice(0, 4)),
-    );
-  }
+  const paths = [
+    withCode(`${host}/search?q=${encodeURIComponent(q)}&lang=${provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG}&page=${page}`),
+    withCode(`${host}/search?keyword=${encodeURIComponent(q)}&lang=${provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG}&page=${page}`),
+    `${host}/search?q=${encodeURIComponent(q)}&lang=en&page=${page}`,
+  ];
 
-  const res = await fetchJson(`${host}/search?q=${encodeURIComponent(q)}&lang=en&page=${page}`);
-  if (res.ok) {
+  for (const path of paths) {
+    const res = await fetchJson(path);
+    if (!res.ok) continue;
     const cards = normalizeCards(res.data, provider);
     if (cards.length) return localizeCards(cards);
   }
 
-  // unused encoded kept for future genre endpoints
   void encoded;
-  return localizeCards(genreDemo(type).map((d) => ({ ...d, provider })));
+  return [];
 }
 
 /** Drama API + Episode API */
@@ -489,8 +516,7 @@ export async function getDramaDetail(
     }
   }
 
-  const demo = getDemoDetail(provider, id);
-  return demo ? localizeDetail(demo) : null;
+  return null;
 }
 
 /** Streaming API + Download/CDN API */
@@ -623,12 +649,6 @@ export async function getStream(
   }
 
   void key;
-  // Do not fall back to demo cover images as "streams" — that looks like
-  // a broken player that only shows thumbnails.
-  const demo = getDemoStream(provider, id, ep);
-  if (demo.url && !/\.(jpg|jpeg|png|webp)(\?|$)/i.test(demo.url) && !demo.url.startsWith("/assets/")) {
-    return demo;
-  }
   return null;
 }
 

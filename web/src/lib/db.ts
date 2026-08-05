@@ -137,109 +137,6 @@ function seedAdmin(database: Database.Database) {
     .run(id, email, hash, "Admin Aura Dracin", "Jakarta");
 }
 
-function seedDemoVideos(database: Database.Database) {
-  const count = database.prepare("SELECT COUNT(*) as c FROM videos").get() as { c: number };
-  if (count.c > 0) return;
-
-  const admin = database.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get() as
-    | { id: string }
-    | undefined;
-  if (!admin) return;
-
-  const demos = [
-    {
-      title: "CEO Dingin, Jatuh Cinta",
-      slug: "ceo-dingin-jatuh-cinta",
-      description: "Dia dingin ke semua orang, kecuali ke satu asisten yang bikin dia salah tingkah.",
-      category: "ceo",
-      thumb: "/assets/thumbs/v1.jpg",
-      tags: ["dracin", "ceo", "romance"],
-      likes: 15200,
-    },
-    {
-      title: "Balas Dendam Sang Pewaris",
-      slug: "balas-dendam-sang-pewaris",
-      description: "Diusir dari rumah sendiri, dia kembali dengan rencana yang nggak ada yang nyangka.",
-      category: "balas-dendam",
-      thumb: "/assets/thumbs/v2.jpg",
-      tags: ["dracin", "balasdendam"],
-      likes: 12300,
-    },
-    {
-      title: "Kembali Demi Cinta",
-      slug: "kembali-demi-cinta",
-      description: "Sepuluh tahun berpisah, takdir mempertemukan mereka lagi di tempat yang paling nggak terduga.",
-      category: "romance",
-      thumb: "/assets/thumbs/v3.jpg",
-      tags: ["dracin", "romance"],
-      likes: 9800,
-    },
-    {
-      title: "Pangeran Fantasi Malam",
-      slug: "pangeran-fantasi-malam",
-      description: "Sebuah kerajaan kuno, satu ramalan, dan cinta yang melanggar semua aturan.",
-      category: "fantasi",
-      thumb: "/assets/thumbs/v4.jpg",
-      tags: ["dracin", "fantasi"],
-      likes: 8700,
-    },
-    {
-      title: "Nikah Kontrak CEO Galak",
-      slug: "nikah-kontrak-ceo-galak",
-      description: "Kontrak setahun buat nyelamatin perusahaan keluarga, gimana kalau ternyata beneran jatuh cinta?",
-      category: "ceo",
-      thumb: "/assets/thumbs/v11.jpg",
-      tags: ["dracin", "ceo"],
-      likes: 5400,
-    },
-    {
-      title: "Misteri Villa Terkutuk",
-      slug: "misteri-villa-terkutuk",
-      description: "Lima tamu, satu villa tua, dan satu tamu yang sebenarnya sudah lama meninggal.",
-      category: "misteri",
-      thumb: "/assets/thumbs/v8.jpg",
-      tags: ["dracin", "misteri"],
-      likes: 6500,
-    },
-  ];
-
-  const insertVideo = database.prepare(`
-    INSERT INTO videos (id, admin_id, category, title, slug, description, thumbnail_url, video_url, like_count, published, published_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
-  `);
-  const insertTag = database.prepare(
-    `INSERT OR IGNORE INTO hashtags (id, name, slug) VALUES (?, ?, ?)`,
-  );
-  const linkTag = database.prepare(
-    `INSERT OR IGNORE INTO video_hashtags (video_id, hashtag_id) VALUES (?, ?)`,
-  );
-  const getTag = database.prepare(`SELECT id FROM hashtags WHERE slug = ?`);
-
-  const tx = database.transaction(() => {
-    for (const d of demos) {
-      const id = crypto.randomUUID();
-      insertVideo.run(
-        id,
-        admin.id,
-        d.category,
-        d.title,
-        d.slug,
-        d.description,
-        d.thumb,
-        d.thumb,
-        d.likes,
-      );
-      for (const tag of d.tags) {
-        const slug = tag.toLowerCase();
-        insertTag.run(crypto.randomUUID(), tag, slug);
-        const row = getTag.get(slug) as { id: string };
-        linkTag.run(id, row.id);
-      }
-    }
-  });
-  tx();
-}
-
 export function getDb() {
   if (db) return db;
   fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
@@ -248,7 +145,17 @@ export function getDb() {
   db.pragma("foreign_keys = ON");
   ensureSchema(db);
   seedAdmin(db);
-  seedDemoVideos(db);
+  // Remove old placeholder/demo local videos (image-only fake likes).
+  db.prepare(
+    `UPDATE videos
+     SET deleted_at = datetime('now'), published = 0
+     WHERE deleted_at IS NULL
+       AND (
+         video_url IS NULL
+         OR video_url = thumbnail_url
+         OR video_url LIKE '/assets/thumbs/%'
+       )`,
+  ).run();
   return db;
 }
 
