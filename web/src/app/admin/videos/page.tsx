@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { dbAll } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +10,7 @@ export default async function AdminVideosPage() {
   if (!session?.user) redirect("/masuk");
   if (session.user.role !== "admin") redirect("/");
 
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT id, title, slug, category, like_count, view_count, published, created_at
-       FROM videos WHERE deleted_at IS NULL ORDER BY created_at DESC`,
-    )
-    .all() as {
+  const rows = await dbAll<{
     id: string;
     title: string;
     slug: string;
@@ -25,7 +19,10 @@ export default async function AdminVideosPage() {
     view_count: number;
     published: number;
     created_at: string;
-  }[];
+  }>(
+    `SELECT id, title, slug, category, like_count, view_count, published, created_at
+     FROM videos WHERE deleted_at IS NULL ORDER BY created_at DESC`,
+  );
 
   return (
     <div className="px-4 py-6">

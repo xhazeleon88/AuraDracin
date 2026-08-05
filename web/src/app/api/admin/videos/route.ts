@@ -1,13 +1,22 @@
 import { NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
 import { auth } from "@/lib/auth";
-import { getDb, slugify } from "@/lib/db";
+import { dbFirst, dbRun, slugify } from "@/lib/db";
 
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Local filesystem uploads are unavailable on Cloudflare Workers.
+  if (process.env.CLOUDFLARE_WORKERS === "1") {
+    return NextResponse.json(
+      {
+        error:
+          "Upload lokal belum tersedia di Cloudflare Workers. Gunakan katalog DramaBos atau aktifkan R2.",
+      },
+      { status: 501 },
+    );
   }
 
   const form = await req.formData();
@@ -25,6 +34,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Data kurang lengkap" }, { status: 400 });
   }
 
+  const path = await import("path");
+  const fs = await import("fs/promises");
   const ext = path.extname(file.name || "").toLowerCase() || ".mp4";
   const allowed = [".mp4", ".webm", ".jpg", ".jpeg", ".png", ".webp"];
   if (!allowed.includes(ext)) {
@@ -41,25 +52,28 @@ export async function POST(req: Request) {
   await fs.writeFile(path.join(uploadDir, fileName), buffer);
 
   const publicUrl = `/uploads/${fileName}`;
-  const db = getDb();
 
-  db.prepare(
+  await dbRun(
     `INSERT INTO videos
       (id, admin_id, category, title, slug, description, thumbnail_url, video_url, published, published_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
-  ).run(id, session.user.id, category, title, slug, description, publicUrl, publicUrl);
-
-  const insertTag = db.prepare(`INSERT OR IGNORE INTO hashtags (id, name, slug) VALUES (?, ?, ?)`);
-  const getTag = db.prepare(`SELECT id FROM hashtags WHERE slug = ?`);
-  const linkTag = db.prepare(
-    `INSERT OR IGNORE INTO video_hashtags (video_id, hashtag_id) VALUES (?, ?)`,
+    id,
+    session.user.id,
+    category,
+    title,
+    slug,
+    description,
+    publicUrl,
+    publicUrl,
   );
 
   for (const tag of hashtags) {
     const tagSlug = slugify(tag);
-    insertTag.run(crypto.randomUUID(), tag, tagSlug);
-    const row = getTag.get(tagSlug) as { id: string };
-    linkTag.run(id, row.id);
+    await dbRun(`INSERT OR IGNORE INTO hashtags (id, name, slug) VALUES (?, ?, ?)`, crypto.randomUUID(), tag, tagSlug);
+    const row = await dbFirst<{ id: string }>(`SELECT id FROM hashtags WHERE slug = ?`, tagSlug);
+    if (row) {
+      await dbRun(`INSERT OR IGNORE INTO video_hashtags (video_id, hashtag_id) VALUES (?, ?)`, id, row.id);
+    }
   }
 
   return NextResponse.json({ ok: true, id, slug });

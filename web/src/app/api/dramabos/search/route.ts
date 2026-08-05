@@ -6,7 +6,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q") || "";
   const provider = searchParams.get("provider");
-  const items = mergeLocalLikes(
+  const items = await mergeLocalLikes(
     provider && provider !== "all"
       ? await searchDramas(q, provider)
       : await searchCatalog(q, 72),

@@ -32,7 +32,7 @@ export default async function HomePage({
   // Search mode: skip homepage rails / multi-provider catalog work.
   if (query) {
     const started = Date.now();
-    const results = mergeLocalLikes(await searchCatalog(query, 72));
+    const results = await mergeLocalLikes(await searchCatalog(query, 72));
     const ms = Date.now() - started;
 
     return (
@@ -92,14 +92,14 @@ export default async function HomePage({
     getHomepageCatalog(240),
     ...PLAYABLE_PROVIDERS.map(async (provider) => {
       const items = await getProviderRail(provider, 25).catch(() => []);
-      return { provider, items: mergeLocalLikes(items) };
+      return { provider, items: await mergeLocalLikes(items) };
     }),
   ]);
 
-  const catalog = mergeLocalLikes(catalogRaw);
+  const catalog = await mergeLocalLikes(catalogRaw);
   const trending = catalog;
-  const latest = mergeLocalLikes(
-    providerBatches.flatMap((batch) => batch.items),
+  const latest = (
+    await mergeLocalLikes(providerBatches.flatMap((batch) => batch.items))
   ).slice(0, 36);
 
   // ReelShort / GoodShort first, then remaining live studio rails.
@@ -118,9 +118,9 @@ export default async function HomePage({
     }))
     .filter((rail) => rail.items.length > 0);
 
-  const featuredSlides = mergeLocalLikes(await buildFeaturedSlides(catalog, 5));
+  const featuredSlides = await mergeLocalLikes(await buildFeaturedSlides(catalog, 5));
 
-  const cityRefs = listCityPopularDramaRefs(city, 12);
+  const cityRefs = await listCityPopularDramaRefs(city, 12);
   const cityItems =
     cityRefs.length > 0
       ? cityRefs

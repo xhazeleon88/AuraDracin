@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { dbAll, dbFirst, dbRun } from "./db";
 import { applyEngagementBaselines } from "./engagement";
 import { toDramaTitleCase } from "./titleCase";
 import type { DramaCard, LocalVideo } from "./types";
@@ -19,15 +19,13 @@ type VideoRow = {
   created_at: string;
 };
 
-function mapVideo(row: VideoRow): LocalVideo {
-  const db = getDb();
-  const tags = db
-    .prepare(
-      `SELECT h.name FROM hashtags h
-       JOIN video_hashtags vh ON vh.hashtag_id = h.id
-       WHERE vh.video_id = ?`,
-    )
-    .all(row.id) as { name: string }[];
+async function mapVideo(row: VideoRow): Promise<LocalVideo> {
+  const tags = await dbAll<{ name: string }>(
+    `SELECT h.name FROM hashtags h
+     JOIN video_hashtags vh ON vh.hashtag_id = h.id
+     WHERE vh.video_id = ?`,
+    row.id,
+  );
 
   return {
     id: row.id,
@@ -47,76 +45,67 @@ function mapVideo(row: VideoRow): LocalVideo {
   };
 }
 
-export function listLocalVideos(limit = 20): LocalVideo[] {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT * FROM videos
-       WHERE published = 1 AND deleted_at IS NULL
-       ORDER BY published_at DESC
-       LIMIT ?`,
-    )
-    .all(limit) as VideoRow[];
-  return rows.map(mapVideo);
+export async function listLocalVideos(limit = 20): Promise<LocalVideo[]> {
+  const rows = await dbAll<VideoRow>(
+    `SELECT * FROM videos
+     WHERE published = 1 AND deleted_at IS NULL
+     ORDER BY published_at DESC
+     LIMIT ?`,
+    limit,
+  );
+  return Promise.all(rows.map(mapVideo));
 }
 
-export function listPopularLocal(limit = 20): LocalVideo[] {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT * FROM videos
-       WHERE published = 1 AND deleted_at IS NULL
-       ORDER BY like_count DESC, view_count DESC
-       LIMIT ?`,
-    )
-    .all(limit) as VideoRow[];
-  return rows.map(mapVideo);
+export async function listPopularLocal(limit = 20): Promise<LocalVideo[]> {
+  const rows = await dbAll<VideoRow>(
+    `SELECT * FROM videos
+     WHERE published = 1 AND deleted_at IS NULL
+     ORDER BY like_count DESC, view_count DESC
+     LIMIT ?`,
+    limit,
+  );
+  return Promise.all(rows.map(mapVideo));
 }
 
-export function listByCategory(category: string, limit = 40): LocalVideo[] {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT * FROM videos
-       WHERE published = 1 AND deleted_at IS NULL AND category = ?
-       ORDER BY published_at DESC
-       LIMIT ?`,
-    )
-    .all(category, limit) as VideoRow[];
-  return rows.map(mapVideo);
+export async function listByCategory(category: string, limit = 40): Promise<LocalVideo[]> {
+  const rows = await dbAll<VideoRow>(
+    `SELECT * FROM videos
+     WHERE published = 1 AND deleted_at IS NULL AND category = ?
+     ORDER BY published_at DESC
+     LIMIT ?`,
+    category,
+    limit,
+  );
+  return Promise.all(rows.map(mapVideo));
 }
 
-export function getLocalBySlug(slug: string): LocalVideo | null {
-  const db = getDb();
-  const row = db
-    .prepare(
-      `SELECT * FROM videos WHERE slug = ? AND published = 1 AND deleted_at IS NULL`,
-    )
-    .get(slug) as VideoRow | undefined;
+export async function getLocalBySlug(slug: string): Promise<LocalVideo | null> {
+  const row = await dbFirst<VideoRow>(
+    `SELECT * FROM videos WHERE slug = ? AND published = 1 AND deleted_at IS NULL`,
+    slug,
+  );
   return row ? mapVideo(row) : null;
 }
 
-export function getLocalById(id: string): LocalVideo | null {
-  const db = getDb();
-  const row = db.prepare(`SELECT * FROM videos WHERE id = ?`).get(id) as VideoRow | undefined;
+export async function getLocalById(id: string): Promise<LocalVideo | null> {
+  const row = await dbFirst<VideoRow>(`SELECT * FROM videos WHERE id = ?`, id);
   return row ? mapVideo(row) : null;
 }
 
-export function listCityPopularDramaRefs(
+export async function listCityPopularDramaRefs(
   city: string,
   limit = 12,
-): { provider: string; id: string }[] {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT target_id, COUNT(*) as score
-       FROM video_views
-       WHERE target_type = 'dramabos' AND city = ?
-       GROUP BY target_id
-       ORDER BY score DESC
-       LIMIT ?`,
-    )
-    .all(city, limit) as { target_id: string; score: number }[];
+): Promise<{ provider: string; id: string }[]> {
+  const rows = await dbAll<{ target_id: string; score: number }>(
+    `SELECT target_id, COUNT(*) as score
+     FROM video_views
+     WHERE target_type = 'dramabos' AND city = ?
+     GROUP BY target_id
+     ORDER BY score DESC
+     LIMIT ?`,
+    city,
+    limit,
+  );
 
   return rows
     .map((row) => {
@@ -131,10 +120,9 @@ export function listCityPopularDramaRefs(
 /**
  * Fill missing API likes/views with stable baselines, then add Aura user likes.
  */
-export function mergeLocalLikes(cards: DramaCard[]): DramaCard[] {
+export async function mergeLocalLikes(cards: DramaCard[]): Promise<DramaCard[]> {
   if (!cards.length) return cards;
   const baselined = applyEngagementBaselines(cards);
-  const db = getDb();
   const targets = baselined
     .filter((c) => c.source === "dramabos")
     .map((c) => `${c.provider}:${c.id}`);
@@ -145,14 +133,13 @@ export function mergeLocalLikes(cards: DramaCard[]): DramaCard[] {
   for (let i = 0; i < targets.length; i += chunkSize) {
     const chunk = targets.slice(i, i + chunkSize);
     const placeholders = chunk.map(() => "?").join(",");
-    const rows = db
-      .prepare(
-        `SELECT target_id, COUNT(*) as c
-         FROM likes
-         WHERE target_type = 'dramabos' AND target_id IN (${placeholders})
-         GROUP BY target_id`,
-      )
-      .all(...chunk) as { target_id: string; c: number }[];
+    const rows = await dbAll<{ target_id: string; c: number }>(
+      `SELECT target_id, COUNT(*) as c
+       FROM likes
+       WHERE target_type = 'dramabos' AND target_id IN (${placeholders})
+       GROUP BY target_id`,
+      ...chunk,
+    );
     for (const row of rows) local.set(row.target_id, row.c);
   }
 
@@ -164,15 +151,13 @@ export function mergeLocalLikes(cards: DramaCard[]): DramaCard[] {
   });
 }
 
-export function countLocalLikes(targetType: "local" | "dramabos", targetId: string) {
-  const db = getDb();
-  return (
-    db
-      .prepare(
-        `SELECT COUNT(*) as c FROM likes WHERE target_type = ? AND target_id = ?`,
-      )
-      .get(targetType, targetId) as { c: number }
-  ).c;
+export async function countLocalLikes(targetType: "local" | "dramabos", targetId: string) {
+  const row = await dbFirst<{ c: number }>(
+    `SELECT COUNT(*) as c FROM likes WHERE target_type = ? AND target_id = ?`,
+    targetType,
+    targetId,
+  );
+  return row?.c ?? 0;
 }
 
 export function toDramaCard(video: LocalVideo): DramaCard {
@@ -190,14 +175,23 @@ export function toDramaCard(video: LocalVideo): DramaCard {
   };
 }
 
-export function recordView(targetType: "local" | "dramabos", targetId: string, userId?: string | null, city?: string | null) {
-  const db = getDb();
-  db.prepare(
+export async function recordView(
+  targetType: "local" | "dramabos",
+  targetId: string,
+  userId?: string | null,
+  city?: string | null,
+) {
+  await dbRun(
     `INSERT INTO video_views (id, target_type, target_id, user_id, city)
      VALUES (?, ?, ?, ?, ?)`,
-  ).run(crypto.randomUUID(), targetType, targetId, userId || null, city || null);
+    crypto.randomUUID(),
+    targetType,
+    targetId,
+    userId || null,
+    city || null,
+  );
 
   if (targetType === "local") {
-    db.prepare(`UPDATE videos SET view_count = view_count + 1 WHERE id = ?`).run(targetId);
+    await dbRun(`UPDATE videos SET view_count = view_count + 1 WHERE id = ?`, targetId);
   }
 }

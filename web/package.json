@@ -7,9 +7,13 @@
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "next lint",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:reset": "rm -f data/aura-dracin.db data/aura-dracin.db-*"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.20.2",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.2",
     "hls.js": "^1.6.16",
@@ -20,6 +24,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260804.1",
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
@@ -31,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.2.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.119.0"
   }
 }

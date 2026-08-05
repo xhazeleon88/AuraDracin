@@ -4,7 +4,7 @@ import { EngagementRail } from "@/components/video/Engagement";
 import { HlsPlayer } from "@/components/video/HlsPlayer";
 import { auth } from "@/lib/auth";
 import { fmtNum } from "@/lib/constants";
-import { getDb } from "@/lib/db";
+import { dbFirst, subtitlesGenerationEnabled } from "@/lib/db";
 import { getDramaDetail, getStream } from "@/lib/dramabos";
 import { enrichDramaEngagement } from "@/lib/engagement";
 import { getBahasaSubtitles } from "@/lib/subtitles";
@@ -38,7 +38,7 @@ export default async function DramaWatchPage({
     ? `/api/subtitles?provider=${encodeURIComponent(provider)}&id=${encodeURIComponent(detail.id)}&ep=${episode}&v=3`
     : undefined;
   // Warm subtitle cache in the background so the player gets cues sooner.
-  if (stream?.url) {
+  if (stream?.url && subtitlesGenerationEnabled()) {
     void getBahasaSubtitles({
       provider,
       dramaId: detail.id,
@@ -46,28 +46,25 @@ export default async function DramaWatchPage({
       streamUrl: stream.url,
     }).catch(() => undefined);
   }
-  recordView("dramabos", `${provider}:${detail.id}`, session?.user?.id, session?.user?.city);
+  await recordView("dramabos", `${provider}:${detail.id}`, session?.user?.id, session?.user?.city);
 
-  const db = getDb();
   const targetId = `${provider}:${detail.id}`;
   const liked = session?.user
     ? Boolean(
-        db
-          .prepare(
-            `SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'dramabos' AND target_id = ?`,
-          )
-          .get(session.user.id, targetId),
+        await dbFirst(
+          `SELECT 1 as ok FROM likes WHERE user_id = ? AND target_type = 'dramabos' AND target_id = ?`,
+          session.user.id,
+          targetId,
+        ),
       )
     : false;
-  const localLikeCount = countLocalLikes("dramabos", targetId);
+  const localLikeCount = await countLocalLikes("dramabos", targetId);
   const combinedLikes = (detail.likes || 0) + localLikeCount;
-  const commentCount = (
-    db
-      .prepare(
-        `SELECT COUNT(*) as c FROM comments WHERE target_type = 'dramabos' AND target_id = ? AND deleted_at IS NULL`,
-      )
-      .get(targetId) as { c: number }
-  ).c;
+  const commentRow = await dbFirst<{ c: number }>(
+    `SELECT COUNT(*) as c FROM comments WHERE target_type = 'dramabos' AND target_id = ? AND deleted_at IS NULL`,
+    targetId,
+  );
+  const commentCount = commentRow?.c ?? 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-neutral-900)] text-[var(--color-neutral-100)]">

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { dbFirst } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -10,10 +10,9 @@ export default async function AdminPage() {
   if (!session?.user) redirect("/masuk");
   if (session.user.role !== "admin") redirect("/");
 
-  const db = getDb();
-  const videos = (db.prepare(`SELECT COUNT(*) as c FROM videos WHERE deleted_at IS NULL`).get() as { c: number }).c;
-  const users = (db.prepare(`SELECT COUNT(*) as c FROM users`).get() as { c: number }).c;
-  const likes = (db.prepare(`SELECT COUNT(*) as c FROM likes`).get() as { c: number }).c;
+  const videos = (await dbFirst<{ c: number }>(`SELECT COUNT(*) as c FROM videos WHERE deleted_at IS NULL`))?.c ?? 0;
+  const users = (await dbFirst<{ c: number }>(`SELECT COUNT(*) as c FROM users`))?.c ?? 0;
+  const likes = (await dbFirst<{ c: number }>(`SELECT COUNT(*) as c FROM likes`))?.c ?? 0;
 
   return (
     <div className="px-4 py-6">

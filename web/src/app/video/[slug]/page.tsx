@@ -4,7 +4,7 @@ import { EngagementRail } from "@/components/video/Engagement";
 import { HlsPlayer } from "@/components/video/HlsPlayer";
 import { auth } from "@/lib/auth";
 import { categoryLabel } from "@/lib/constants";
-import { getDb } from "@/lib/db";
+import { dbFirst } from "@/lib/db";
 import { getLocalBySlug, recordView } from "@/lib/videos";
 
 export const dynamic = "force-dynamic";
@@ -15,29 +15,26 @@ export default async function LocalWatchPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const video = getLocalBySlug(slug);
+  const video = await getLocalBySlug(slug);
   if (!video) notFound();
 
   const session = await auth();
-  recordView("local", video.id, session?.user?.id, session?.user?.city);
+  await recordView("local", video.id, session?.user?.id, session?.user?.city);
 
-  const db = getDb();
   const liked = session?.user
     ? Boolean(
-        db
-          .prepare(
-            `SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'local' AND target_id = ?`,
-          )
-          .get(session.user.id, video.id),
+        await dbFirst(
+          `SELECT 1 as ok FROM likes WHERE user_id = ? AND target_type = 'local' AND target_id = ?`,
+          session.user.id,
+          video.id,
+        ),
       )
     : false;
-  const commentCount = (
-    db
-      .prepare(
-        `SELECT COUNT(*) as c FROM comments WHERE target_type = 'local' AND target_id = ? AND deleted_at IS NULL`,
-      )
-      .get(video.id) as { c: number }
-  ).c;
+  const commentRow = await dbFirst<{ c: number }>(
+    `SELECT COUNT(*) as c FROM comments WHERE target_type = 'local' AND target_id = ? AND deleted_at IS NULL`,
+    video.id,
+  );
+  const commentCount = commentRow?.c ?? 0;
 
   const streamType = video.videoUrl.includes(".m3u8") ? "hls" : "mp4";
 

@@ -1,12 +1,8 @@
 import { createHash } from "crypto";
-import { spawn } from "child_process";
-import fs from "fs";
-import path from "path";
-import { getDb } from "./db";
+import { dbFirst, dbRun, subtitlesGenerationEnabled } from "./db";
 import { translateManyToBahasa } from "./translate";
 
 const whisperBin = process.env.WHISPER_BIN || "/home/ubuntu/.local/bin/whisper";
-const dataDir = path.join(/*turbopackIgnore: true*/ process.cwd(), "data", "subtitles");
 /** Bump to invalidate old VTTs that had broken lead/skew baked in. */
 const CACHE_VERSION = "v3";
 
@@ -25,7 +21,12 @@ function cleanSpawnEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function run(cmd: string, args: string[], timeoutMs = 180000): Promise<{ code: number; stdout: string; stderr: string }> {
+async function run(
+  cmd: string,
+  args: string[],
+  timeoutMs = 180000,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const { spawn } = await import("child_process");
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -101,7 +102,6 @@ async function segmentsToBahasaVtt(segments: WhisperSegment[]) {
 }
 
 async function extractAudio(streamUrl: string, wavPath: string) {
-  // Most short-drama episodes are ~60–120s. Cap so Whisper finishes before timeout.
   const result = await run(
     "ffmpeg",
     [
@@ -128,13 +128,15 @@ async function extractAudio(streamUrl: string, wavPath: string) {
     ],
     90000,
   );
+  const fs = await import("fs");
   if (result.code !== 0 || !fs.existsSync(wavPath)) {
     throw new Error(result.stderr || "ffmpeg gagal ekstrak audio");
   }
 }
 
 async function transcribe(wavPath: string, workDir: string): Promise<WhisperSegment[]> {
-  // tiny.en is better for English short-drama dialogue timing than multilingual tiny.
+  const path = await import("path");
+  const fs = await import("fs");
   const result = await run(
     whisperBin,
     [
@@ -187,13 +189,22 @@ export async function getBahasaSubtitles(opts: {
   streamUrl: string;
 }): Promise<{ vtt: string; cached: boolean }> {
   const id = cacheId(opts.provider, opts.dramaId, opts.episode);
-  const db = getDb();
-  const cached = db
-    .prepare(`SELECT vtt, status FROM subtitle_cache WHERE id = ?`)
-    .get(id) as { vtt: string; status: string } | undefined;
+  const cached = await dbFirst<{ vtt: string; status: string }>(
+    `SELECT vtt, status FROM subtitle_cache WHERE id = ?`,
+    id,
+  );
   // Serve successful caches. status=error rows fall through and retry.
   if (cached?.status === "ready" && cached.vtt.startsWith("WEBVTT") && /\d{2}:\d{2}:\d{2}\.\d{3}\s+-->/.test(cached.vtt)) {
     return { vtt: cached.vtt, cached: true };
+  }
+
+  // Workers cannot run ffmpeg/whisper — return NOTE or prior cache.
+  if (!subtitlesGenerationEnabled()) {
+    const note =
+      cached?.vtt?.startsWith("WEBVTT")
+        ? cached.vtt
+        : "WEBVTT\n\nNOTE\nSubtitle Bahasa sedang disiapkan di server lokal (Workers cache-only).\n";
+    return { vtt: note, cached: Boolean(cached) };
   }
 
   const existing = inflight.get(id);
@@ -203,15 +214,24 @@ export async function getBahasaSubtitles(opts: {
   }
 
   const job = (async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const dataDir = path.join(/*turbopackIgnore: true*/ process.cwd(), "data", "subtitles");
     fs.mkdirSync(dataDir, { recursive: true });
     const workDir = path.join(dataDir, id);
     fs.mkdirSync(workDir, { recursive: true });
     const wavPath = path.join(workDir, "audio.wav");
 
-    db.prepare(
+    await dbRun(
       `INSERT OR REPLACE INTO subtitle_cache (id, provider, drama_id, episode, stream_url, vtt, status, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, 'generating', datetime('now'))`,
-    ).run(id, opts.provider, opts.dramaId, opts.episode, opts.streamUrl, "WEBVTT\n\n");
+      id,
+      opts.provider,
+      opts.dramaId,
+      opts.episode,
+      opts.streamUrl,
+      "WEBVTT\n\n",
+    );
 
     try {
       await extractAudio(opts.streamUrl, wavPath);
@@ -221,18 +241,30 @@ export async function getBahasaSubtitles(opts: {
           ? await segmentsToBahasaVtt(segments)
           : "WEBVTT\n\nNOTE\nSubtitle Bahasa belum tersedia untuk episode ini.\n";
 
-      db.prepare(
+      await dbRun(
         `INSERT OR REPLACE INTO subtitle_cache (id, provider, drama_id, episode, stream_url, vtt, status, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, 'ready', datetime('now'))`,
-      ).run(id, opts.provider, opts.dramaId, opts.episode, opts.streamUrl, vtt);
+        id,
+        opts.provider,
+        opts.dramaId,
+        opts.episode,
+        opts.streamUrl,
+        vtt,
+      );
       return vtt;
     } catch (error) {
       const message = error instanceof Error ? error.message : "subtitle gagal";
       const fallback = `WEBVTT\n\nNOTE\n${message}\n`;
-      db.prepare(
+      await dbRun(
         `INSERT OR REPLACE INTO subtitle_cache (id, provider, drama_id, episode, stream_url, vtt, status, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, 'error', datetime('now'))`,
-      ).run(id, opts.provider, opts.dramaId, opts.episode, opts.streamUrl, fallback);
+        id,
+        opts.provider,
+        opts.dramaId,
+        opts.episode,
+        opts.streamUrl,
+        fallback,
+      );
       return fallback;
     } finally {
       inflight.delete(id);

@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { getDb } from "./db";
+import { dbFirst, dbRun } from "./db";
 
 function hashKey(text: string) {
   return createHash("sha256").update(text.trim().toLowerCase()).digest("hex").slice(0, 32);
@@ -44,19 +44,22 @@ export async function translateToBahasa(text: string): Promise<string> {
   const source = text.trim();
   if (!source || !looksEnglish(source)) return source;
 
-  const db = getDb();
   const key = hashKey(source);
-  const cached = db
-    .prepare(`SELECT translated FROM translation_cache WHERE id = ?`)
-    .get(key) as { translated: string } | undefined;
+  const cached = await dbFirst<{ translated: string }>(
+    `SELECT translated FROM translation_cache WHERE id = ?`,
+    key,
+  );
   if (cached?.translated) return cached.translated;
 
   try {
     const translated = (await translateViaGoogle(source)) || source;
-    db.prepare(
+    await dbRun(
       `INSERT OR REPLACE INTO translation_cache (id, source, translated, updated_at)
        VALUES (?, ?, ?, datetime('now'))`,
-    ).run(key, source, translated);
+      key,
+      source,
+      translated,
+    );
     return translated;
   } catch {
     return source;

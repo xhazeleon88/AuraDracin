@@ -21,7 +21,7 @@ export default async function CategoryPage({
     PLAYABLE_PROVIDERS.map((provider) => getByGenre(genre, provider).catch(() => [])),
   );
   const seen = new Set<string>();
-  const items = mergeLocalLikes(
+  const items = await mergeLocalLikes(
     batches.flat().filter((item) => {
       const key = `${item.provider}:${item.id}`;
       if (seen.has(key)) return false;

@@ -19,7 +19,7 @@ export default async function StudioDetailPage({
   const studio = getStudioProfile(id);
   const playable = isPlayableProvider(id);
   const catalog = playable
-    ? mergeLocalLikes(await getProviderRail(id, 48).catch(() => []))
+    ? await mergeLocalLikes(await getProviderRail(id, 48).catch(() => []))
     : [];
 
   const hero = catalog[0]?.cover || "";

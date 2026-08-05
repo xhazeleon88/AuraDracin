@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getDb } from "@/lib/db";
+import { dbFirst, dbRun } from "@/lib/db";
 
 const schema = z.object({
   name: z.string().min(2).max(100),
@@ -13,19 +13,23 @@ const schema = z.object({
 export async function POST(req: Request) {
   try {
     const body = schema.parse(await req.json());
-    const db = getDb();
     const email = body.email.trim().toLowerCase();
-    const exists = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+    const exists = await dbFirst("SELECT id FROM users WHERE email = ?", email);
     if (exists) {
       return NextResponse.json({ error: "Email sudah terdaftar" }, { status: 400 });
     }
 
     const id = crypto.randomUUID();
     const hash = await bcrypt.hash(body.password, 12);
-    db.prepare(
+    await dbRun(
       `INSERT INTO users (id, email, password_hash, name, city, role)
        VALUES (?, ?, ?, ?, ?, 'user')`,
-    ).run(id, email, hash, body.name.trim(), body.city);
+      id,
+      email,
+      hash,
+      body.name.trim(),
+      body.city,
+    );
 
     return NextResponse.json({ ok: true });
   } catch (error) {

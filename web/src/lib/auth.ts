@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
-import { getDb } from "./db";
+import { dbFirst, dbRun } from "./db";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -24,23 +24,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const password = String(credentials?.password || "");
         if (!email || !password) return null;
 
-        const db = getDb();
-        const user = db
-          .prepare(
-            `SELECT id, email, name, avatar_url, city, role, password_hash
-             FROM users WHERE email = ?`,
-          )
-          .get(email) as
-          | {
-              id: string;
-              email: string;
-              name: string | null;
-              avatar_url: string | null;
-              city: string | null;
-              role: string;
-              password_hash: string | null;
-            }
-          | undefined;
+        const user = await dbFirst<{
+          id: string;
+          email: string;
+          name: string | null;
+          avatar_url: string | null;
+          city: string | null;
+          role: string;
+          password_hash: string | null;
+        }>(
+          `SELECT id, email, name, avatar_url, city, role, password_hash
+           FROM users WHERE email = ?`,
+          email,
+        );
 
         if (!user?.password_hash) return null;
         const ok = await bcrypt.compare(password, user.password_hash);
@@ -68,16 +64,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider !== "google" || !user.email) return true;
-      const db = getDb();
       const email = user.email.toLowerCase();
-      const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email) as
-        | { id: string }
-        | undefined;
+      const existing = await dbFirst<{ id: string }>("SELECT id FROM users WHERE email = ?", email);
       if (!existing) {
-        db.prepare(
+        await dbRun(
           `INSERT INTO users (id, email, name, avatar_url, city, role)
            VALUES (?, ?, ?, ?, ?, 'user')`,
-        ).run(
           crypto.randomUUID(),
           email,
           user.name || "Pengguna Google",
@@ -88,19 +80,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
     async jwt({ token, user, trigger, session }) {
-      const db = getDb();
       if (user?.email) {
-        const row = db
-          .prepare(`SELECT id, role, city, name, avatar_url FROM users WHERE email = ?`)
-          .get(user.email.toLowerCase()) as
-          | {
-              id: string;
-              role: string;
-              city: string | null;
-              name: string | null;
-              avatar_url: string | null;
-            }
-          | undefined;
+        const row = await dbFirst<{
+          id: string;
+          role: string;
+          city: string | null;
+          name: string | null;
+          avatar_url: string | null;
+        }>(`SELECT id, role, city, name, avatar_url FROM users WHERE email = ?`, user.email.toLowerCase());
         if (row) {
           token.sub = row.id;
           token.role = row.role;
@@ -113,10 +100,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (trigger === "update" && session?.city) {
         token.city = session.city;
         if (token.sub) {
-          db.prepare(`UPDATE users SET city = ?, updated_at = datetime('now') WHERE id = ?`).run(
-            session.city,
-            token.sub,
-          );
+          await dbRun(`UPDATE users SET city = ?, updated_at = datetime('now') WHERE id = ?`, session.city, token.sub);
         }
       }
 

@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aura-dracin",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-07-30",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "aura-dracin"
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "CLOUDFLARE_WORKERS": "1",
+    "SUBTITLES_MODE": "cache-only",
+    "DRAMABOS_BASE_URL": "https://api.dramabuzz.sbs",
+    "DRAMABOS_DEFAULT_PROVIDER": "reelshort",
+    "DRAMABOS_LANG": "id",
+    "ADMIN_EMAIL": "admin@auradracin.com"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aura-dracin",
+      "database_id": "7ac79b61-8bcf-40d6-8cea-7f0d60f04d98",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
