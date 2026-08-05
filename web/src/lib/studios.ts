@@ -1,4 +1,4 @@
-import { CATALOG_PROVIDERS } from "./dramabos";
+/** Shared studio/provider display helpers — safe for client components. */
 
 export type StudioProfile = {
   id: string;
@@ -9,7 +9,28 @@ export type StudioProfile = {
   accent: string;
 };
 
-/** Display name with leading capital (reelshort → Reelshort). Prefer brand map when known. */
+export const STUDIO_IDS = [
+  "reelshort",
+  "goodshort",
+  "dramabite",
+  "pinedrama",
+  "golddrama",
+  "flickreels",
+  "idrama",
+  "netshort",
+  "dramawave",
+  "starshort",
+  "fundrama",
+  "microdrama",
+  "vigloo",
+  "freereels",
+  "shortmax",
+  "dramabox",
+  "flareflow",
+  "melolo",
+  "happyshort",
+] as const;
+
 const BRAND_NAMES: Record<string, string> = {
   reelshort: "ReelShort",
   goodshort: "GoodShort",
@@ -188,9 +209,9 @@ export function getStudioProfile(id: string): StudioProfile {
 }
 
 export function listStudioProfiles() {
-  return CATALOG_PROVIDERS.map((id) => getStudioProfile(id));
+  return STUDIO_IDS.map((id) => getStudioProfile(id));
 }
 
 export function isKnownStudio(id: string) {
-  return (CATALOG_PROVIDERS as readonly string[]).includes(id.toLowerCase());
+  return (STUDIO_IDS as readonly string[]).includes(id.toLowerCase());
 }
