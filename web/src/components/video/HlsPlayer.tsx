@@ -302,8 +302,8 @@ export function HlsPlayer({
       />
 
       {subsOn && activeText ? (
-        <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[72px] z-20 flex justify-center px-4 sm:bottom-[58px]">
-          <div className="max-w-[92%] whitespace-pre-line rounded bg-black/75 px-3 py-1.5 text-center text-[13px] font-semibold leading-snug text-white shadow-sm">
+        <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[96px] z-30 flex justify-center px-4">
+          <div className="max-w-[92%] whitespace-pre-line rounded bg-black/80 px-3 py-1.5 text-center text-[14px] font-semibold leading-snug text-white shadow-sm">
             {activeText}
           </div>
         </div>
