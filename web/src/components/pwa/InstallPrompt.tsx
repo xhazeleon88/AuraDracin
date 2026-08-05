@@ -111,28 +111,29 @@ export function InstallPrompt() {
           />
           <div>
             <h2 id="install-title" className="text-[18px] font-extrabold leading-tight">
-              Install Aura Dracin on your phone
+              Taruh Aura Dracin di HP kamu
             </h2>
             <p className="mt-1.5 text-[13px] text-[var(--color-neutral-700)]">
-              Akses lebih cepat kayak app — layar penuh, icon di home screen, siap binge.
+              Biar nonton dracin tinggal buka icon-nya. Gak perlu cari-cari link lagi.
             </p>
           </div>
         </div>
 
         {iosHint ? (
           <p className="mt-4 border border-[var(--color-divider)] bg-[var(--color-surface)] px-3 py-2.5 text-[12px] text-[var(--color-neutral-800)]">
-            Di iPhone: tap <strong>Share</strong> <i className="fa-solid fa-arrow-up-from-bracket" />{" "}
-            lalu pilih <strong>Add to Home Screen</strong>.
+            Di iPhone: ketuk <strong>Share</strong>{" "}
+            <i className="fa-solid fa-arrow-up-from-bracket" /> terus pilih{" "}
+            <strong>Add to Home Screen</strong>.
           </p>
         ) : null}
 
         <div className="mt-4 flex gap-2">
           <button type="button" className="btn btn-secondary flex-1" onClick={dismiss}>
-            Nanti saja
+            Skip dulu
           </button>
           <button type="button" className="btn btn-primary flex-1" onClick={install}>
-            <i className="fa-solid fa-download" />
-            Install
+            <i className="fa-solid fa-plus" />
+            Pasang
           </button>
         </div>
       </div>
