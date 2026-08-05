@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 function toPlayableSrc(src: string, type: "hls" | "mp4") {
@@ -23,15 +24,24 @@ export function HlsPlayer({
   src,
   poster,
   type = "hls",
+  nextHref,
 }: {
   src: string;
   poster?: string;
   type?: "hls" | "mp4";
+  /** When set, navigate here when the current episode ends. */
+  nextHref?: string;
 }) {
+  const router = useRouter();
   const ref = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
+  const [advancing, setAdvancing] = useState(false);
   const playable = toPlayableSrc(src, type);
   const isImage = Boolean(src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i));
+
+  useEffect(() => {
+    setAdvancing(false);
+  }, [src]);
 
   useEffect(() => {
     const video = ref.current;
@@ -125,6 +135,18 @@ export function HlsPlayer({
     };
   }, [playable, src, type, isImage]);
 
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || isImage || !nextHref) return;
+
+    const onEnded = () => {
+      setAdvancing(true);
+      router.push(nextHref);
+    };
+    video.addEventListener("ended", onEnded);
+    return () => video.removeEventListener("ended", onEnded);
+  }, [nextHref, router, isImage, src]);
+
   if (isImage) {
     return (
       <div className="relative h-full w-full">
@@ -147,6 +169,11 @@ export function HlsPlayer({
         muted
         poster={poster}
       />
+      {advancing ? (
+        <div className="absolute inset-x-0 bottom-12 z-20 bg-black/75 px-3 py-2 text-center text-xs text-white">
+          Lanjut episode berikutnya…
+        </div>
+      ) : null}
       {error ? (
         <div className="absolute inset-x-0 bottom-0 bg-black/75 px-3 py-2 text-center text-xs text-white">
           {error}

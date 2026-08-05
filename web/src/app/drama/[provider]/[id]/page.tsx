@@ -25,6 +25,10 @@ export default async function DramaWatchPage({
   if (!detail) notFound();
 
   const stream = await getStream(provider, detail.id, episode);
+  const nextEpisode = detail.episodes.find((item) => item.number === episode + 1);
+  const nextHref = nextEpisode
+    ? `/drama/${provider}/${encodeURIComponent(detail.id)}?ep=${nextEpisode.number}`
+    : undefined;
   recordView("dramabos", `${provider}:${detail.id}`, session?.user?.id, session?.user?.city);
 
   const db = getDb();
@@ -76,6 +80,7 @@ export default async function DramaWatchPage({
               src={stream.url}
               poster={detail.cover}
               type={stream.type || "hls"}
+              nextHref={nextHref}
             />
           ) : (
             <div className="relative flex h-full w-full items-center justify-center bg-black">
