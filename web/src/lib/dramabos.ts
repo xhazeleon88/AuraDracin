@@ -1,4 +1,5 @@
 import { translateToBahasa } from "./translate";
+import { toDramaTitleCase } from "./titleCase";
 import type { DramaCard, DramaDetail, StreamResult } from "./types";
 
 /**
@@ -423,7 +424,7 @@ function dedupe(cards: DramaCard[]) {
 
 async function localizeCard(card: DramaCard): Promise<DramaCard> {
   // Catalog rails only show titles — skip synopsis translate to keep feeds fast.
-  const title = await translateToBahasa(card.title);
+  const title = toDramaTitleCase(await translateToBahasa(card.title));
   return { ...card, title };
 }
 
@@ -448,7 +449,7 @@ async function localizeDetail(detail: DramaDetail): Promise<DramaDetail> {
   const episodes = await Promise.all(
     detail.episodes.map(async (ep) => ({
       ...ep,
-      title: await translateToBahasa(ep.title),
+      title: toDramaTitleCase(await translateToBahasa(ep.title)),
     })),
   );
   return { ...detail, ...base, episodes };

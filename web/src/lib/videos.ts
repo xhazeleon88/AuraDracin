@@ -1,5 +1,6 @@
 import { getDb } from "./db";
 import { applyEngagementBaselines } from "./engagement";
+import { toDramaTitleCase } from "./titleCase";
 import type { DramaCard, LocalVideo } from "./types";
 
 type VideoRow = {
@@ -31,7 +32,7 @@ function mapVideo(row: VideoRow): LocalVideo {
   return {
     id: row.id,
     slug: row.slug,
-    title: row.title,
+    title: toDramaTitleCase(row.title),
     description: row.description,
     category: row.category,
     thumbnailUrl: row.thumbnail_url || "/assets/thumbs/v1.jpg",
