@@ -119,7 +119,7 @@ export default async function HomePage({
     }))
     .filter((rail) => rail.items.length > 0);
 
-  const featuredSlides = await buildFeaturedSlides(catalog, 5);
+  const featuredSlides = mergeLocalLikes(await buildFeaturedSlides(catalog, 5));
 
   const cityRefs = listCityPopularDramaRefs(city, 12);
   const cityItems =

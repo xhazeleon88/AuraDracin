@@ -896,6 +896,8 @@ export async function buildFeaturedSlides(
     }
     const detail = await getDramaDetail(ref.provider, ref.id).catch(() => null);
     if (detail) {
+      // Leave likes/views raw here — page runs mergeLocalLikes so Unggulan
+      // matches the watch-page engagement numbers.
       pinned.push({
         id: detail.id,
         provider: detail.provider,
