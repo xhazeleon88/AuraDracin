@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 
@@ -14,6 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {isWatch ? null : <AppHeader />}
         <main className="flex min-h-0 flex-1 flex-col">{children}</main>
         {isWatch ? null : <BottomNav />}
+        <InstallPrompt />
       </div>
     </div>
   );

@@ -7,7 +7,6 @@ import { CATEGORIES } from "@/lib/constants";
 import {
   getHomepageCatalog,
   getLatest,
-  getStatus,
   searchDramas,
 } from "@/lib/dramabos";
 import { auth } from "@/lib/auth";
@@ -28,7 +27,6 @@ export default async function HomePage({
   const { q } = await searchParams;
   const session = await auth();
   const city = session?.user?.city || "Jakarta";
-  const status = await getStatus();
 
   const [catalog, latestRs, latestGs, localPopular, localLatest, cityVideos] =
     await Promise.all([
@@ -55,22 +53,6 @@ export default async function HomePage({
 
   return (
     <div className="pb-4">
-      {status.mode === "demo" ? (
-        <div className="border-b-2 border-[var(--color-divider)] bg-[#fff2ef] px-4 py-2.5 text-[12px] text-[#7c1405]">
-          <strong>Mode demo DramaBos.</strong> {status.reason}{" "}
-          <a href="https://api.dramabuzz.sbs" target="_blank" rel="noreferrer">
-            Set kode akses →
-          </a>
-        </div>
-      ) : (
-        <div className="border-b-2 border-[var(--color-divider)] bg-emerald-50 px-4 py-2.5 text-[12px] text-emerald-800">
-          Live DramaBuzz · {catalog.length} judul · ReelShort + GoodShort ·{" "}
-          <a href="https://dramabos.live/docs" target="_blank" rel="noreferrer">
-            docs
-          </a>
-        </div>
-      )}
-
       <Suspense fallback={null}>
         <SearchBar />
       </Suspense>
