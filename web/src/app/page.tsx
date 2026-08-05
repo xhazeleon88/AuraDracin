@@ -145,12 +145,9 @@ export default async function HomePage({
       />
 
       <footer className="flex flex-col gap-2.5 border-t-2 border-[var(--color-divider)] px-4 py-7 text-[13px]">
-        <a href="#">Tentang Aura Dracin</a>
-        <a href="#">Syarat & Ketentuan</a>
-        <a href="#">Kebijakan Privasi</a>
-        <a href="https://dramabos.live" target="_blank" rel="noreferrer">
-          Powered by DramaBos API
-        </a>
+        <Link href="/tentang">Tentang Aura Dracin</Link>
+        <Link href="/syarat">Syarat & Ketentuan</Link>
+        <Link href="/privasi">Kebijakan Privasi</Link>
         <p className="text-muted mt-2 text-[11px]">
           © 2026 Aura Dracin. Nonton Dracin, rasain auranya.
         </p>
