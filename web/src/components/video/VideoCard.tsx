@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import { fmtNum } from "@/lib/constants";
 import type { DramaCard } from "@/lib/types";
 
@@ -13,11 +16,30 @@ export function VideoCard({
     item.source === "local" && item.slug
       ? `/video/${item.slug}`
       : `/drama/${item.provider}/${encodeURIComponent(item.id)}`;
+  const [coverFailed, setCoverFailed] = useState(false);
+  const showCover = Boolean(item.cover) && !coverFailed;
 
   return (
     <Link href={href} className={`${widthClass} flex shrink-0 flex-col gap-1.5 text-[var(--color-text)]`}>
       <div className="portrait-card">
-        <img src={item.cover} alt={item.title} loading="lazy" />
+        {showCover ? (
+          <img
+            src={item.cover}
+            alt={item.title}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setCoverFailed(true)}
+          />
+        ) : (
+          <div
+            className="flex h-full w-full items-end bg-[linear-gradient(160deg,#1a1a1a_0%,#3a1515_55%,#7a1f1f_100%)] p-2.5"
+            aria-hidden
+          >
+            <span className="line-clamp-4 text-[12px] font-bold leading-snug text-white/90">
+              {item.title}
+            </span>
+          </div>
+        )}
         {item.isNew ? (
           <span className="tag tag-accent absolute left-1.5 top-1.5 !text-[10px]">Baru</span>
         ) : null}

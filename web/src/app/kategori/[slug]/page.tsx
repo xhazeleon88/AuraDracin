@@ -6,6 +6,7 @@ import {
   getByGenre,
   genreQueryForCategory,
 } from "@/lib/dramabos";
+import { mergeLocalLikes } from "@/lib/videos";
 
 export const dynamic = "force-dynamic";
 
@@ -20,12 +21,14 @@ export default async function CategoryPage({
     CATALOG_PROVIDERS.map((provider) => getByGenre(genre, provider).catch(() => [])),
   );
   const seen = new Set<string>();
-  const items = batches.flat().filter((item) => {
-    const key = `${item.provider}:${item.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const items = mergeLocalLikes(
+    batches.flat().filter((item) => {
+      const key = `${item.provider}:${item.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+  );
 
   return (
     <div className="pb-24">

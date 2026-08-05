@@ -11,7 +11,7 @@ import {
   searchDramas,
 } from "@/lib/dramabos";
 import { auth } from "@/lib/auth";
-import { listCityPopularDramaRefs } from "@/lib/videos";
+import { listCityPopularDramaRefs, mergeLocalLikes } from "@/lib/videos";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export default async function HomePage({
   const session = await auth();
   const city = session?.user?.city || "Jakarta";
 
-  const [catalog, ...latestBatches] = await Promise.all([
+  const [catalogRaw, ...latestBatches] = await Promise.all([
     q
       ? Promise.all(CATALOG_PROVIDERS.map((p) => searchDramas(q, p))).then((batches) =>
           batches.flat(),
@@ -33,8 +33,9 @@ export default async function HomePage({
     ...CATALOG_PROVIDERS.map((p) => getLatest(p).catch(() => [])),
   ]);
 
+  const catalog = mergeLocalLikes(catalogRaw);
   const trending = catalog;
-  const latest = latestBatches.flat().slice(0, 36);
+  const latest = mergeLocalLikes(latestBatches.flat()).slice(0, 36);
   const byProvider = (provider: string) =>
     catalog.filter((c) => c.provider === provider).slice(0, 24);
 
@@ -70,6 +71,7 @@ export default async function HomePage({
             src={featured.cover}
             alt={featured.title}
             className="h-full w-full object-cover"
+            referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-neutral-900)] via-[var(--color-neutral-900)]/30 to-transparent" />
           <div className="absolute bottom-[18px] left-4 right-4 flex flex-col gap-2">

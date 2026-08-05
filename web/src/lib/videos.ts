@@ -126,6 +126,50 @@ export function listCityPopularDramaRefs(
     .filter((row): row is { provider: string; id: string } => Boolean(row));
 }
 
+/** Add Aura user likes on top of provider API like/view counts. */
+export function mergeLocalLikes(cards: DramaCard[]): DramaCard[] {
+  if (!cards.length) return cards;
+  const db = getDb();
+  const targets = cards
+    .filter((c) => c.source === "dramabos")
+    .map((c) => `${c.provider}:${c.id}`);
+  if (!targets.length) return cards;
+
+  const local = new Map<string, number>();
+  const chunkSize = 200;
+  for (let i = 0; i < targets.length; i += chunkSize) {
+    const chunk = targets.slice(i, i + chunkSize);
+    const placeholders = chunk.map(() => "?").join(",");
+    const rows = db
+      .prepare(
+        `SELECT target_id, COUNT(*) as c
+         FROM likes
+         WHERE target_type = 'dramabos' AND target_id IN (${placeholders})
+         GROUP BY target_id`,
+      )
+      .all(...chunk) as { target_id: string; c: number }[];
+    for (const row of rows) local.set(row.target_id, row.c);
+  }
+
+  return cards.map((card) => {
+    if (card.source !== "dramabos") return card;
+    const extra = local.get(`${card.provider}:${card.id}`) || 0;
+    if (!extra && card.likes) return card;
+    return { ...card, likes: (card.likes || 0) + extra };
+  });
+}
+
+export function countLocalLikes(targetType: "local" | "dramabos", targetId: string) {
+  const db = getDb();
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) as c FROM likes WHERE target_type = ? AND target_id = ?`,
+      )
+      .get(targetType, targetId) as { c: number }
+  ).c;
+}
+
 export function toDramaCard(video: LocalVideo): DramaCard {
   return {
     id: video.id,

@@ -5,7 +5,7 @@ import { HlsPlayer } from "@/components/video/HlsPlayer";
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getDramaDetail, getStream } from "@/lib/dramabos";
-import { recordView } from "@/lib/videos";
+import { countLocalLikes, recordView } from "@/lib/videos";
 
 export const dynamic = "force-dynamic";
 
@@ -45,13 +45,8 @@ export default async function DramaWatchPage({
           .get(session.user.id, targetId),
       )
     : false;
-  const likeCount = (
-    db
-      .prepare(
-        `SELECT COUNT(*) as c FROM likes WHERE target_type = 'dramabos' AND target_id = ?`,
-      )
-      .get(targetId) as { c: number }
-  ).c;
+  const localLikeCount = countLocalLikes("dramabos", targetId);
+  const combinedLikes = (detail.likes || 0) + localLikeCount;
   const commentCount = (
     db
       .prepare(
@@ -92,6 +87,7 @@ export default async function DramaWatchPage({
                 src={detail.cover}
                 alt=""
                 className="absolute inset-0 h-full w-full object-cover opacity-40"
+                referrerPolicy="no-referrer"
               />
               <p className="relative z-10 px-4 text-center text-sm text-white">
                 Stream belum tersedia untuk episode ini.
@@ -101,7 +97,7 @@ export default async function DramaWatchPage({
           <EngagementRail
             targetType="dramabos"
             targetId={targetId}
-            initialLikes={likeCount || detail.likes || 0}
+            initialLikes={combinedLikes}
             initialComments={commentCount}
             liked={liked}
           />

@@ -89,13 +89,31 @@ function hostFor(provider: string) {
 
 function providerBase(provider: string) {
   const host = hostFor(provider);
-  if (DRAKULA_PROVIDERS.has(provider)) return `${host}/${provider}`;
+  // Drakula-hosted apps expose the stable surface under /api/{provider}/...
+  if (DRAKULA_PROVIDERS.has(provider)) return `${host}/api/${provider}`;
   return host;
 }
 
 function feedLang(provider: string) {
   if (provider === "reelshort" || DRAKULA_PROVIDERS.has(provider)) return "en";
   return LANG === "id" ? "in" : LANG;
+}
+
+/** Parse API counters that may be numbers or abbreviated strings ("1.2K", "3M"). */
+function parseCount(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.round(value));
+  if (typeof value !== "string") return undefined;
+  const raw = value.trim().replace(/,/g, "");
+  if (!raw) return undefined;
+  const m = raw.match(/^(\d+(?:\.\d+)?)([kKmMbB])?$/);
+  if (!m) {
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.max(0, Math.round(n)) : undefined;
+  }
+  const base = Number(m[1]);
+  const suffix = (m[2] || "").toLowerCase();
+  const mult = suffix === "k" ? 1_000 : suffix === "m" ? 1_000_000 : suffix === "b" ? 1_000_000_000 : 1;
+  return Math.max(0, Math.round(base * mult));
 }
 
 async function fetchJson(url: string): Promise<{ ok: boolean; data?: unknown; error?: string }> {
@@ -165,6 +183,11 @@ function asArray(input: unknown): Record<string, unknown>[] {
       "collections",
     ]) {
       if (Array.isArray(nested[key])) return nested[key] as Record<string, unknown>[];
+      // GoodShort search: data.searchResult.records
+      if (nested[key] && typeof nested[key] === "object") {
+        const deeper = nested[key] as Record<string, unknown>;
+        if (Array.isArray(deeper.records)) return deeper.records as Record<string, unknown>[];
+      }
     }
     if (nested.book && typeof nested.book === "object") {
       return [nested.book as Record<string, unknown>];
@@ -196,19 +219,66 @@ function pickString(row: Record<string, unknown>, keys: string[]) {
 
 function pickNumber(row: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
-    const value = row[key];
-    if (typeof value === "number") return value;
-    if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value))) {
-      return Number(value);
-    }
+    const parsed = parseCount(row[key]);
+    if (typeof parsed === "number") return parsed;
   }
   return undefined;
 }
 
-function normalizeCard(row: Record<string, unknown>, provider: string): DramaCard | null {
+function pickCover(row: Record<string, unknown>) {
+  const direct = pickString(row, [
+    "pic",
+    "cover",
+    "cover2",
+    "image",
+    "bookDetailCover",
+    "thumbnailExpanded",
+    "thumbnail",
+    "cover_image",
+    "cover_url",
+    "compress_cover_url",
+    "shortPlayCover",
+    "bannerImage",
+    "ptear", // fundrama obfuscated cover
+  ]);
+  if (direct) return direct;
+
+  const coverThumb =
+    row.cover_image_thumb && typeof row.cover_image_thumb === "object"
+      ? pickString(row.cover_image_thumb as Record<string, unknown>, ["thumb", "url"])
+      : "";
+  if (coverThumb) return coverThumb;
+
+  if (Array.isArray(row.thumbnails)) {
+    for (const thumb of row.thumbnails) {
+      if (thumb && typeof thumb === "object") {
+        const url = pickString(thumb as Record<string, unknown>, ["url", "src", "image"]);
+        if (url) return url;
+      } else if (typeof thumb === "string" && thumb.trim()) {
+        return thumb.trim();
+      }
+    }
+  }
+
+  return "";
+}
+
+function normalizeCard(
+  row: Record<string, unknown>,
+  provider: string,
+  opts: { requireCover?: boolean } = {},
+): DramaCard | null {
+  const requireCover = opts.requireCover !== false;
+
   // Nested wrappers (freereels/flickreels variants)
   if (row.series && typeof row.series === "object") {
-    return normalizeCard(row.series as Record<string, unknown>, provider);
+    return normalizeCard(row.series as Record<string, unknown>, provider, opts);
+  }
+  if (row.program && typeof row.program === "object") {
+    return normalizeCard(row.program as Record<string, unknown>, provider, opts);
+  }
+  if (row.info && typeof row.info === "object") {
+    return normalizeCard(row.info as Record<string, unknown>, provider, opts);
   }
 
   // GoodShort home items expose bookId (real drama id) and a separate list id
@@ -228,6 +298,7 @@ function normalizeCard(row: Record<string, unknown>, provider: string): DramaCar
           "key",
           "dshame", // fundrama obfuscated id
         ]);
+  // Do NOT use `tags` as title — GoodShort /hot returns hot-words with tags=title and no cover.
   const title = pickString(row, [
     "title",
     "bookName",
@@ -235,38 +306,23 @@ function normalizeCard(row: Record<string, unknown>, provider: string): DramaCar
     "shortPlayName",
     "short_play_name",
     "nsin", // fundrama obfuscated title
-    "tags",
   ]);
-  const coverThumb =
-    row.cover_image_thumb && typeof row.cover_image_thumb === "object"
-      ? pickString(row.cover_image_thumb as Record<string, unknown>, ["thumb", "url"])
-      : "";
-  const cover =
-    pickString(row, [
-      "pic",
-      "cover",
-      "image",
-      "bookDetailCover",
-      "thumbnail",
-      "cover_image",
-      "cover_url",
-      "compress_cover_url",
-      "shortPlayCover",
-      "bannerImage",
-      "ptear", // fundrama obfuscated cover
-    ]) || coverThumb;
+  const cover = pickCover(row);
   if (!id || !title) return null;
+  // Catalog cards without artwork look broken — skip incomplete rows (e.g. hot-words).
+  if (requireCover && !cover) return null;
   return {
     id,
     provider,
     title,
-    cover: cover || "",
+    cover,
     synopsis: pickString(row, [
       "desc",
       "introduction",
       "synopsis",
       "description",
       "introduce",
+      "logLine",
       "dentra", // fundrama obfuscated synopsis
     ]),
     episodeCount: pickNumber(row, [
@@ -282,16 +338,24 @@ function normalizeCard(row: Record<string, unknown>, provider: string): DramaCar
     ]),
     category: pickString(row, ["genre", "category", "label", "categories", "series_tag"]) || "romance",
     likes: pickNumber(row, [
+      "likeCount",
+      "likeNum",
+      "likes",
+      "praiseCount",
+      "favor_count",
+      "follow_count",
+      "followCount",
+      "bookmarkCount",
+      "collect_count",
+      "heatScore",
+      "scoreShow",
+      "hot_score",
+      "hot",
+      "viewCount",
+      "view_count",
+      "views",
       "view",
       "playCount",
-      "likes",
-      "hot",
-      "views",
-      "view_count",
-      "heatScore",
-      "hot_score",
-      "favor_count",
-      "bookmarkCount",
     ]),
     source: "dramabos",
   };
@@ -415,19 +479,50 @@ export async function getStatus(): Promise<DramabosStatus> {
 export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promise<DramaCard[]> {
   const base = providerBase(provider);
   const lang = feedLang(provider);
-  const paths = [
-    withCode(`${base}/trending?lang=${lang}`),
-    withCode(`${base}/api/trending?lang=${lang}`),
-    `${base}/trending?lang=${lang}`,
-    withCode(`${base}/hot?lang=${lang}`),
-    withCode(`${base}/hot`),
-    withCode(`${base}/api/list?lang=${lang}&page=${page}`),
-    withCode(`${base}/home?lang=${lang}&channelId=-1&page=${page}&size=24`),
-    withCode(`${base}/api/search?q=love&lang=${lang}&page=${page}`),
-    withCode(`${base}/search?q=love+story&lang=${lang}&page=${page}`),
-    withCode(`${base}/search?q=love&lang=${lang}&page=${page}`),
-    withCode(`${base}/search?keyword=love&lang=${lang}&page=${page}`),
-  ];
+  let paths: string[] = [];
+  if (provider === "starshort") {
+    paths = [
+      withCode(`${base}/content/trending?locale=${lang}`),
+      withCode(`${base}/content/hot?locale=${lang}`),
+      withCode(`${base}/content/latest?locale=${lang}`),
+      withCode(`${base}/content/recommended?locale=${lang}`),
+      withCode(`${base}/search?keyword=love+story&locale=${lang}`),
+    ];
+  } else if (provider === "freereels") {
+    paths = [
+      withCode(`${base}/popular?lang=${lang}`),
+      withCode(`${base}/foryou?lang=${lang}`),
+      withCode(`${base}/new?lang=${lang}`),
+      withCode(`${base}/search?q=love+story&lang=${lang}`),
+    ];
+  } else if (provider === "vigloo") {
+    paths = [
+      withCode(`${base}/search?q=love`),
+      withCode(`${base}/rank`),
+      withCode(`${base}/browse`),
+    ];
+  } else if (provider === "fundrama" || provider === "microdrama") {
+    paths = [
+      withCode(`${base}/dramas`),
+      withCode(`${base}/list`),
+      withCode(`${base}/search?q=love+story`),
+      withCode(`${base}/search?q=love`),
+    ];
+  } else {
+    // Prefer full catalog endpoints (with covers) over /hot word lists.
+    paths = [
+      withCode(`${base}/home?lang=${lang}&channelId=-1&page=${page}&size=24`),
+      withCode(`${base}/trending?lang=${lang}`),
+      withCode(`${base}/api/trending?lang=${lang}`),
+      withCode(`${base}/popular?lang=${lang}`),
+      withCode(`${base}/list?lang=${lang}`),
+      withCode(`${base}/api/list?lang=${lang}&page=${page}`),
+      withCode(`${base}/api/search?q=love+story&lang=${lang}&page=${page}`),
+      withCode(`${base}/search?q=love+story&lang=${lang}&page=${page}`),
+      withCode(`${base}/search?keyword=love&lang=${lang}&page=${page}`),
+      withCode(`${base}/hot?lang=${lang}`),
+    ];
+  }
 
   for (const path of paths) {
     const res = await fetchJson(path);
@@ -510,18 +605,25 @@ export async function searchDramas(q: string, provider = DEFAULT_PROVIDER): Prom
   const base = providerBase(provider);
   const encoded = encodeURIComponent(q.trim());
   const lang = feedLang(provider);
-  // Some providers (freereels) require 2+ words
+  // Some providers (freereels / goodshort) require 2+ words
   const q2 = q.trim().includes(" ") ? encoded : encodeURIComponent(`${q.trim()} drama`);
 
-  const paths = [
-    withCode(`${base}/search?q=${encoded}&lang=${lang}`),
-    withCode(`${base}/search?keyword=${encoded}&lang=${lang}`),
-    withCode(`${base}/api/search?q=${encoded}&lang=${lang}`),
-    withCode(`${base}/api/search?keyword=${encoded}&lang=${lang}`),
-    withCode(`${base}/search?q=${q2}&lang=${lang}`),
-    `${base}/search?q=${encoded}&lang=${lang}`,
-    `${base}/search?keyword=${encoded}&lang=${lang}`,
-  ];
+  const paths =
+    provider === "starshort"
+      ? [
+          withCode(`${base}/search?keyword=${encoded}&locale=${lang}`),
+          withCode(`${base}/search?keyword=${q2}&locale=${lang}`),
+        ]
+      : [
+          withCode(`${base}/search?q=${encoded}&lang=${lang}`),
+          withCode(`${base}/search?keyword=${encoded}&lang=${lang}`),
+          withCode(`${base}/api/search?q=${encoded}&lang=${lang}`),
+          withCode(`${base}/api/search?keyword=${encoded}&lang=${lang}`),
+          withCode(`${base}/search?q=${q2}&lang=${lang}`),
+          withCode(`${base}/search?keyword=${encoded}&locale=${lang}`),
+          `${base}/search?q=${encoded}&lang=${lang}`,
+          `${base}/search?keyword=${encoded}&lang=${lang}`,
+        ];
 
   for (const path of paths) {
     const res = await fetchJson(path);
@@ -602,7 +704,7 @@ export async function getDramaDetail(
           ? ((root.data as Record<string, unknown>).book as Record<string, unknown>) ||
             (root.data as Record<string, unknown>)
           : root;
-      const base = normalizeCard(book, provider);
+      const base = normalizeCard(book, provider, { requireCover: false });
       if (base) {
         const normalizedEps = asArray(chapterRes.data).map((ep, index) => {
           const idx = pickNumber(ep, ["index"]);
@@ -657,7 +759,9 @@ export async function getDramaDetail(
         row.data && typeof row.data === "object"
           ? (row.data as Record<string, unknown>)
           : row;
-      const base = normalizeCard(nested, provider) || normalizeCard(row, provider);
+      const base =
+        normalizeCard(nested, provider, { requireCover: false }) ||
+        normalizeCard(row, provider, { requireCover: false });
       if (base) {
         const chapterRows = asArray(
           (chapterRes.data as Record<string, unknown> | undefined)?.chapters || chapterRes.data,
