@@ -19,6 +19,10 @@ const PROVIDER_HOST: Record<string, string> = {
   reelshort: "https://reelshort.goodbos.online",
   goodshort: "https://goodshort.goodbos.online",
   starshort: "https://drakula.goodbos.online",
+  fundrama: "https://drakula.goodbos.online",
+  microdrama: "https://drakula.goodbos.online",
+  vigloo: "https://drakula.goodbos.online",
+  freereels: "https://drakula.goodbos.online",
   shortmax: "https://shortmax.goodbos.online",
   dramabox: "https://dramabox.goodbos.online",
   flickreels: "https://flickreels.goodbos.online",
@@ -38,18 +42,31 @@ export const CATALOG_PROVIDERS = [
   "reelshort",
   "goodshort",
   "dramabite",
-  "flareflow",
   "pinedrama",
   "golddrama",
-  "shortmax",
   "flickreels",
-  "dramabox",
   "idrama",
   "netshort",
   "dramawave",
   "melolo",
+  "starshort",
+  "fundrama",
+  "microdrama",
+  "vigloo",
+  "freereels",
+  "shortmax",
+  "dramabox",
+  "flareflow",
   "happyshort",
 ] as const;
+
+const DRAKULA_PROVIDERS = new Set([
+  "starshort",
+  "fundrama",
+  "microdrama",
+  "vigloo",
+  "freereels",
+]);
 
 export type DramabosStatus = {
   mode: "live" | "demo";
@@ -68,6 +85,17 @@ function accessCode() {
 
 function hostFor(provider: string) {
   return PROVIDER_HOST[provider] || `https://${provider}.goodbos.online`;
+}
+
+function providerBase(provider: string) {
+  const host = hostFor(provider);
+  if (DRAKULA_PROVIDERS.has(provider)) return `${host}/${provider}`;
+  return host;
+}
+
+function feedLang(provider: string) {
+  if (provider === "reelshort" || DRAKULA_PROVIDERS.has(provider)) return "en";
+  return LANG === "id" ? "in" : LANG;
 }
 
 async function fetchJson(url: string): Promise<{ ok: boolean; data?: unknown; error?: string }> {
@@ -113,16 +141,45 @@ function asArray(input: unknown): Record<string, unknown>[] {
     "chapters",
     "data",
     "platforms",
+    "collections",
+    "payloads",
+    "hot_drama_list",
+    "searchCodeSearchResult",
   ]) {
     if (Array.isArray(obj[key])) return obj[key] as Record<string, unknown>[];
   }
   if (obj.data && typeof obj.data === "object") {
     const nested = obj.data as Record<string, unknown>;
-    for (const key of ["list", "items", "records", "books", "searchResult", "episodes"]) {
+    for (const key of [
+      "list",
+      "items",
+      "records",
+      "books",
+      "searchResult",
+      "episodes",
+      "results",
+      "payloads",
+      "data",
+      "searchCodeSearchResult",
+      "hot_drama_list",
+      "collections",
+    ]) {
       if (Array.isArray(nested[key])) return nested[key] as Record<string, unknown>[];
     }
     if (nested.book && typeof nested.book === "object") {
       return [nested.book as Record<string, unknown>];
+    }
+    // freereels: data.data.items[].series
+    if (nested.data && typeof nested.data === "object") {
+      const deeper = nested.data as Record<string, unknown>;
+      if (Array.isArray(deeper.items)) {
+        return (deeper.items as Record<string, unknown>[]).map((row) =>
+          row.series && typeof row.series === "object"
+            ? (row.series as Record<string, unknown>)
+            : row,
+        );
+      }
+      if (Array.isArray(deeper.data)) return deeper.data as Record<string, unknown>[];
     }
   }
   return [];
@@ -149,23 +206,93 @@ function pickNumber(row: Record<string, unknown>, keys: string[]) {
 }
 
 function normalizeCard(row: Record<string, unknown>, provider: string): DramaCard | null {
+  // Nested wrappers (freereels/flickreels variants)
+  if (row.series && typeof row.series === "object") {
+    return normalizeCard(row.series as Record<string, unknown>, provider);
+  }
+
   // GoodShort home items expose bookId (real drama id) and a separate list id
   const id =
     provider === "goodshort"
       ? pickString(row, ["bookId", "action", "id", "dramaId"])
-      : pickString(row, ["id", "bookId", "action", "dramaId"]);
-  const title = pickString(row, ["title", "bookName", "name", "tags"]);
-  const cover = pickString(row, ["pic", "cover", "image", "bookDetailCover", "thumbnail"]);
+      : pickString(row, [
+          "id",
+          "bookId",
+          "action",
+          "dramaId",
+          "shortplay_id",
+          "shortPlayId",
+          "collection_id",
+          "playlet_id",
+          "file_id",
+          "key",
+          "dshame", // fundrama obfuscated id
+        ]);
+  const title = pickString(row, [
+    "title",
+    "bookName",
+    "name",
+    "shortPlayName",
+    "short_play_name",
+    "nsin", // fundrama obfuscated title
+    "tags",
+  ]);
+  const coverThumb =
+    row.cover_image_thumb && typeof row.cover_image_thumb === "object"
+      ? pickString(row.cover_image_thumb as Record<string, unknown>, ["thumb", "url"])
+      : "";
+  const cover =
+    pickString(row, [
+      "pic",
+      "cover",
+      "image",
+      "bookDetailCover",
+      "thumbnail",
+      "cover_image",
+      "cover_url",
+      "compress_cover_url",
+      "shortPlayCover",
+      "bannerImage",
+      "ptear", // fundrama obfuscated cover
+    ]) || coverThumb;
   if (!id || !title) return null;
   return {
     id,
     provider,
     title,
     cover: cover || "",
-    synopsis: pickString(row, ["desc", "introduction", "synopsis", "description"]),
-    episodeCount: pickNumber(row, ["chapters", "chapterCount", "episodes", "totalEpisodes"]),
-    category: pickString(row, ["genre", "category", "label"]) || "romance",
-    likes: pickNumber(row, ["view", "playCount", "likes", "hot"]),
+    synopsis: pickString(row, [
+      "desc",
+      "introduction",
+      "synopsis",
+      "description",
+      "introduce",
+      "dentra", // fundrama obfuscated synopsis
+    ]),
+    episodeCount: pickNumber(row, [
+      "chapters",
+      "chapterCount",
+      "episodes",
+      "totalEpisodes",
+      "total_episodes",
+      "episodeCount",
+      "episode_count",
+      "upload_num",
+      "eshe",
+    ]),
+    category: pickString(row, ["genre", "category", "label", "categories", "series_tag"]) || "romance",
+    likes: pickNumber(row, [
+      "view",
+      "playCount",
+      "likes",
+      "hot",
+      "views",
+      "view_count",
+      "heatScore",
+      "hot_score",
+      "favor_count",
+      "bookmarkCount",
+    ]),
     source: "dramabos",
   };
 }
@@ -208,11 +335,9 @@ function dedupe(cards: DramaCard[]) {
 }
 
 async function localizeCard(card: DramaCard): Promise<DramaCard> {
-  const [title, synopsis] = await Promise.all([
-    translateToBahasa(card.title),
-    card.synopsis ? translateToBahasa(card.synopsis) : Promise.resolve(card.synopsis),
-  ]);
-  return { ...card, title, synopsis };
+  // Catalog rails only show titles — skip synopsis translate to keep feeds fast.
+  const title = await translateToBahasa(card.title);
+  return { ...card, title };
 }
 
 async function localizeCards(cards: DramaCard[]): Promise<DramaCard[]> {
@@ -288,20 +413,20 @@ export async function getStatus(): Promise<DramabosStatus> {
 
 /** Feed & Trending API */
 export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promise<DramaCard[]> {
-  const host = hostFor(provider);
-  const lang = provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG;
+  const base = providerBase(provider);
+  const lang = feedLang(provider);
   const paths = [
-    `${host}/trending?lang=${lang}`,
-    `${host}/api/trending?lang=${lang}`,
-    withCode(`${host}/trending?lang=${lang}`),
-    withCode(`${host}/api/trending?lang=${lang}`),
-    `${host}/home?lang=${lang}&channelId=-1&page=${page}&size=24`,
-    withCode(`${host}/home?lang=${lang}&channelId=-1&page=${page}&size=24`),
-    `${host}/hot?lang=${lang}`,
-    withCode(`${host}/hot?lang=${lang}`),
-    withCode(`${host}/search?q=love&lang=${lang}&page=${page}`),
-    withCode(`${host}/search?keyword=love&lang=${lang}&page=${page}`),
-    `${host}/search?q=love&lang=${lang}&page=${page}`,
+    withCode(`${base}/trending?lang=${lang}`),
+    withCode(`${base}/api/trending?lang=${lang}`),
+    `${base}/trending?lang=${lang}`,
+    withCode(`${base}/hot?lang=${lang}`),
+    withCode(`${base}/hot`),
+    withCode(`${base}/api/list?lang=${lang}&page=${page}`),
+    withCode(`${base}/home?lang=${lang}&channelId=-1&page=${page}&size=24`),
+    withCode(`${base}/api/search?q=love&lang=${lang}&page=${page}`),
+    withCode(`${base}/search?q=love+story&lang=${lang}&page=${page}`),
+    withCode(`${base}/search?q=love&lang=${lang}&page=${page}`),
+    withCode(`${base}/search?keyword=love&lang=${lang}&page=${page}`),
   ];
 
   for (const path of paths) {
@@ -315,13 +440,16 @@ export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promis
 }
 
 export async function getLatest(provider = DEFAULT_PROVIDER, page = 1): Promise<DramaCard[]> {
-  const host = hostFor(provider);
-  const lang = provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG;
+  const base = providerBase(provider);
+  const lang = feedLang(provider);
   const paths = [
-    `${host}/home?lang=${lang}&channelId=563&page=${page}&size=24`,
-    `${host}/home?lang=${lang}&channelId=-1&page=${page}&size=24`,
-    withCode(`${host}/search?q=new&lang=${lang}&page=${page}`),
-    withCode(`${host}/search?keyword=new&lang=${lang}&page=${page}`),
+    withCode(`${base}/home?lang=${lang}&channelId=563&page=${page}&size=24`),
+    withCode(`${base}/home?lang=${lang}&channelId=-1&page=${page}&size=24`),
+    withCode(`${base}/api/list?lang=${lang}&page=${page}`),
+    withCode(`${base}/nexthome?page=${page}&page_size=24&lang=${lang}`),
+    withCode(`${base}/api/search?q=new&lang=${lang}&page=${page}`),
+    withCode(`${base}/search?q=new&lang=${lang}&page=${page}`),
+    withCode(`${base}/search?keyword=new&lang=${lang}&page=${page}`),
   ];
   for (const path of paths) {
     const res = await fetchJson(path);
@@ -332,19 +460,33 @@ export async function getLatest(provider = DEFAULT_PROVIDER, page = 1): Promise<
   return getTrending(provider, page);
 }
 
+function interleaveBatches(batches: DramaCard[][]): DramaCard[] {
+  const out: DramaCard[] = [];
+  const max = Math.max(0, ...batches.map((b) => b.length));
+  for (let i = 0; i < max; i += 1) {
+    for (const batch of batches) {
+      if (batch[i]) out.push(batch[i]);
+    }
+  }
+  return dedupe(out);
+}
+
 /** Pull as many live titles as possible from every working provider. */
 export async function getHomepageCatalog(limit = 120): Promise<DramaCard[]> {
   const status = await getProviderStatus();
   const liveIds = new Set(
     (status.platforms || [])
-      .filter((p) => p.status === "active")
+      .filter((p) => p.status === "active" || p.status === "maintenance")
       .map((p) => p.id.toLowerCase()),
   );
   const providers = CATALOG_PROVIDERS.filter(
-    (id) => liveIds.size === 0 || liveIds.has(id) || ["reelshort", "goodshort"].includes(id),
+    (id) =>
+      liveIds.size === 0 ||
+      liveIds.has(id) ||
+      ["reelshort", "goodshort", "fundrama", "microdrama", "vigloo", "freereels"].includes(id),
   );
 
-  const queries = ["love", "ceo", "revenge", "baby", "billionaire", "wife", "drama", "romance"];
+  const queries = ["love", "ceo", "revenge", "baby"];
 
   const batches = await Promise.all(
     providers.map(async (provider) => {
@@ -352,28 +494,33 @@ export async function getHomepageCatalog(limit = 120): Promise<DramaCard[]> {
         getTrending(provider, 1).catch(() => [] as DramaCard[]),
         getLatest(provider, 1).catch(() => [] as DramaCard[]),
         ...queries
-          .slice(0, provider === "reelshort" || provider === "goodshort" ? queries.length : 3)
+          .slice(0, provider === "reelshort" || provider === "goodshort" ? queries.length : 2)
           .map((q) => searchDramas(q, provider).catch(() => [] as DramaCard[])),
       ]);
       return dedupe([...trend, ...latest, ...searches.flat()]);
     }),
   );
 
-  return dedupe(batches.flat()).slice(0, limit);
+  return interleaveBatches(batches).slice(0, limit);
 }
 
 /** Search API */
 export async function searchDramas(q: string, provider = DEFAULT_PROVIDER): Promise<DramaCard[]> {
   if (!q.trim()) return getTrending(provider);
-  const host = hostFor(provider);
+  const base = providerBase(provider);
   const encoded = encodeURIComponent(q.trim());
+  const lang = feedLang(provider);
+  // Some providers (freereels) require 2+ words
+  const q2 = q.trim().includes(" ") ? encoded : encodeURIComponent(`${q.trim()} drama`);
 
-  const lang = provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG;
   const paths = [
-    withCode(`${host}/search?q=${encoded}&lang=${lang}`),
-    withCode(`${host}/search?keyword=${encoded}&lang=${lang}`),
-    `${host}/search?q=${encoded}&lang=${lang}`,
-    `${host}/search?keyword=${encoded}&lang=${lang}`,
+    withCode(`${base}/search?q=${encoded}&lang=${lang}`),
+    withCode(`${base}/search?keyword=${encoded}&lang=${lang}`),
+    withCode(`${base}/api/search?q=${encoded}&lang=${lang}`),
+    withCode(`${base}/api/search?keyword=${encoded}&lang=${lang}`),
+    withCode(`${base}/search?q=${q2}&lang=${lang}`),
+    `${base}/search?q=${encoded}&lang=${lang}`,
+    `${base}/search?keyword=${encoded}&lang=${lang}`,
   ];
 
   for (const path of paths) {
@@ -392,7 +539,7 @@ export async function getByGenre(
   provider = "goodshort",
   page = 1,
 ): Promise<DramaCard[]> {
-  const host = hostFor(provider);
+  const base = providerBase(provider);
   const encoded = encodeURIComponent(type);
 
   // Map Aura categories to search/genre queries
@@ -413,11 +560,14 @@ export async function getByGenre(
     misteri: "mystery",
   };
   const q = queryMap[type] || type;
+  const lang = feedLang(provider);
 
   const paths = [
-    withCode(`${host}/search?q=${encodeURIComponent(q)}&lang=${provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG}&page=${page}`),
-    withCode(`${host}/search?keyword=${encodeURIComponent(q)}&lang=${provider === "reelshort" ? "en" : LANG === "id" ? "in" : LANG}&page=${page}`),
-    `${host}/search?q=${encodeURIComponent(q)}&lang=en&page=${page}`,
+    withCode(`${base}/search?q=${encodeURIComponent(q)}&lang=${lang}&page=${page}`),
+    withCode(`${base}/search?keyword=${encodeURIComponent(q)}&lang=${lang}&page=${page}`),
+    withCode(`${base}/api/search?q=${encodeURIComponent(q)}&lang=${lang}&page=${page}`),
+    withCode(`${base}/hot?lang=${lang}`),
+    `${base}/search?q=${encodeURIComponent(q)}&lang=en&page=${page}`,
   ];
 
   for (const path of paths) {
@@ -437,6 +587,7 @@ export async function getDramaDetail(
   id: string,
 ): Promise<DramaDetail | null> {
   const host = hostFor(provider);
+  const basePath = providerBase(provider);
 
   if (provider === "goodshort") {
     const detailRes = await fetchJson(`${host}/book/${encodeURIComponent(id)}?lang=${LANG === "id" ? "in" : LANG}`);
@@ -474,18 +625,39 @@ export async function getDramaDetail(
       }
     }
   } else {
-    const detailRes = await fetchJson(
-      `${host}/detail/${encodeURIComponent(id)}?lang=${provider === "reelshort" ? "en" : LANG}`,
-    );
-    const chapterRes = await fetchJson(
-      withCode(
-        `${host}/chapters/${encodeURIComponent(id)}?lang=${provider === "reelshort" ? "en" : LANG}`,
-      ),
-    );
+    const lang = feedLang(provider);
+    const detailPaths = [
+      `${basePath}/detail/${encodeURIComponent(id)}?lang=${lang}`,
+      withCode(`${basePath}/detail/${encodeURIComponent(id)}?lang=${lang}`),
+      withCode(`${basePath}/drama/${encodeURIComponent(id)}?lang=${lang}`),
+      withCode(`${basePath}/book/${encodeURIComponent(id)}?lang=${lang}`),
+      `${host}/detail/${encodeURIComponent(id)}?lang=${lang}`,
+    ];
+    const chapterPaths = [
+      withCode(`${basePath}/chapters/${encodeURIComponent(id)}?lang=${lang}`),
+      withCode(`${host}/chapters/${encodeURIComponent(id)}?lang=${lang}`),
+      withCode(`${basePath}/drama/${encodeURIComponent(id)}?lang=${lang}`),
+    ];
+
+    let detailRes: { ok: boolean; data?: unknown } = { ok: false };
+    for (const path of detailPaths) {
+      detailRes = await fetchJson(path);
+      if (detailRes.ok && detailRes.data) break;
+    }
+
+    let chapterRes: { ok: boolean; data?: unknown } = { ok: false };
+    for (const path of chapterPaths) {
+      chapterRes = await fetchJson(path);
+      if (chapterRes.ok && chapterRes.data) break;
+    }
 
     if (detailRes.ok && detailRes.data) {
       const row = detailRes.data as Record<string, unknown>;
-      const base = normalizeCard(row, provider);
+      const nested =
+        row.data && typeof row.data === "object"
+          ? (row.data as Record<string, unknown>)
+          : row;
+      const base = normalizeCard(nested, provider) || normalizeCard(row, provider);
       if (base) {
         const chapterRows = asArray(
           (chapterRes.data as Record<string, unknown> | undefined)?.chapters || chapterRes.data,
@@ -500,7 +672,7 @@ export async function getDramaDetail(
 
         return localizeDetail({
           ...base,
-          synopsis: base.synopsis || pickString(row, ["desc", "introduction"]),
+          synopsis: base.synopsis || pickString(nested, ["desc", "introduction", "description"]),
           episodes:
             episodes.length > 0
               ? episodes
