@@ -116,14 +116,21 @@ function parseCount(value: unknown): number | undefined {
   return Math.max(0, Math.round(base * mult));
 }
 
-async function fetchJson(url: string): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+async function fetchJson(
+  url: string,
+  opts?: { timeoutMs?: number; revalidate?: number | false },
+): Promise<{ ok: boolean; data?: unknown; error?: string }> {
   try {
+    const timeoutMs = opts?.timeoutMs ?? 12_000;
     const res = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 AuraDracin/1.0",
         Accept: "application/json",
       },
-      next: { revalidate: 120 },
+      signal: AbortSignal.timeout(timeoutMs),
+      ...(opts?.revalidate === false
+        ? { cache: "no-store" as const }
+        : { next: { revalidate: opts?.revalidate ?? 120 } }),
     });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
     return { ok: true, data: await res.json() };
@@ -413,7 +420,7 @@ async function localizeCards(cards: DramaCard[]): Promise<DramaCard[]> {
   const out: DramaCard[] = new Array(cards.length);
   const queue = [...cards.entries()];
   await Promise.all(
-    Array.from({ length: Math.min(6, queue.length || 1) }, async () => {
+    Array.from({ length: Math.min(10, queue.length || 1) }, async () => {
       while (queue.length) {
         const next = queue.shift();
         if (!next) break;
@@ -604,40 +611,170 @@ export async function getHomepageCatalog(limit = 120): Promise<DramaCard[]> {
   return interleaveBatches(batches).slice(0, limit);
 }
 
-/** Search API */
-export async function searchDramas(q: string, provider = DEFAULT_PROVIDER): Promise<DramaCard[]> {
-  if (!q.trim()) return getTrending(provider);
+/** Providers that usually return usable search hits quickly. */
+export const SEARCH_PROVIDERS = [
+  "reelshort",
+  "goodshort",
+  "netshort",
+  "dramawave",
+  "pinedrama",
+  "golddrama",
+  "idrama",
+  "flickreels",
+  "vigloo",
+  "freereels",
+  "starshort",
+  "microdrama",
+  "fundrama",
+  "dramabite",
+] as const;
+
+/** Expand Indonesian / slang queries into English API-friendly terms. */
+export function expandSearchQueries(raw: string): string[] {
+  const q = raw.trim().replace(/\s+/g, " ");
+  if (!q) return [];
+  const lower = q.toLowerCase();
+  const extras: string[] = [];
+
+  const map: [RegExp, string[]][] = [
+    [/\b(balas\s*dendam|dendam)\b/i, ["revenge", "payback"]],
+    [/\b(ceo|bos|pebisnis|konglomerat)\b/i, ["ceo", "billionaire", "boss"]],
+    [/\b(fantasi|werewolf|serigala|alpha|luna)\b/i, ["fantasy", "werewolf", "alpha"]],
+    [/\b(cinta|romance|romansa)\b/i, ["love", "romance"]],
+    [/\b(nikah|kontrak|istri|suami)\b/i, ["marriage", "contract wife"]],
+    [/\b(bayi|anak|family|keluarga)\b/i, ["baby", "family"]],
+    [/\b(misteri|thriller|horor)\b/i, ["mystery", "thriller"]],
+    [/\b(komedi|lucu)\b/i, ["comedy"]],
+    [/\b(aksi|action)\b/i, ["action"]],
+  ];
+
+  for (const [re, terms] of map) {
+    if (re.test(lower)) extras.push(...terms);
+  }
+
+  const out = [q, ...extras];
+  // GoodShort/FreeReels often need 2+ words
+  if (!q.includes(" ") && extras[0]) out.push(`${q} ${extras[0]}`);
+  else if (!q.includes(" ")) out.push(`${q} drama`);
+
+  return [...new Set(out.map((s) => s.trim()).filter(Boolean))].slice(0, 4);
+}
+
+function relevanceScore(card: DramaCard, query: string, expansions: string[]): number {
+  const title = `${card.title} ${card.synopsis || ""}`.toLowerCase();
+  const q = query.toLowerCase();
+  const tokens = q.split(/\s+/).filter((t) => t.length > 1);
+  let score = 0;
+
+  if (title.includes(q)) score += 120;
+  for (const tok of tokens) {
+    if (title.includes(tok)) score += 28;
+  }
+  for (const exp of expansions) {
+    const e = exp.toLowerCase();
+    if (e !== q && title.includes(e)) score += 18;
+    for (const tok of e.split(/\s+/)) {
+      if (tok.length > 2 && title.includes(tok)) score += 8;
+    }
+  }
+
+  // Mild popularity boost so decent matches float up
+  score += Math.min(25, Math.log10((card.likes || 1) + 1) * 8);
+  score += Math.min(15, Math.log10((card.views || 1) + 1) * 3);
+  return score;
+}
+
+async function searchProviderFast(provider: string, query: string): Promise<DramaCard[]> {
   const base = providerBase(provider);
-  const encoded = encodeURIComponent(q.trim());
   const lang = feedLang(provider);
-  // Some providers (freereels / goodshort) require 2+ words
-  const q2 = q.trim().includes(" ") ? encoded : encodeURIComponent(`${q.trim()} drama`);
+  const encoded = encodeURIComponent(query);
+  const timeoutMs = 2800;
 
   const paths =
     provider === "starshort"
-      ? [
-          withCode(`${base}/search?keyword=${encoded}&locale=${lang}`),
-          withCode(`${base}/search?keyword=${q2}&locale=${lang}`),
-        ]
-      : [
-          withCode(`${base}/search?q=${encoded}&lang=${lang}`),
-          withCode(`${base}/search?keyword=${encoded}&lang=${lang}`),
-          withCode(`${base}/api/search?q=${encoded}&lang=${lang}`),
-          withCode(`${base}/api/search?keyword=${encoded}&lang=${lang}`),
-          withCode(`${base}/search?q=${q2}&lang=${lang}`),
-          withCode(`${base}/search?keyword=${encoded}&locale=${lang}`),
-          `${base}/search?q=${encoded}&lang=${lang}`,
-          `${base}/search?keyword=${encoded}&lang=${lang}`,
-        ];
+      ? [withCode(`${base}/search?keyword=${encoded}&locale=${lang}`)]
+      : provider === "freereels"
+        ? [
+            withCode(
+              `${base}/search?q=${encodeURIComponent(query.includes(" ") ? query : `${query} drama`)}&lang=${lang}`,
+            ),
+          ]
+        : provider === "goodshort"
+          ? [
+              withCode(
+                `${base}/search?q=${encodeURIComponent(query.includes(" ") ? query : `${query} love`)}&lang=in`,
+              ),
+              withCode(`${base}/search?q=${encoded}&lang=in`),
+            ]
+          : provider === "vigloo"
+            ? [withCode(`${base}/search?q=${encoded}`)]
+            : provider === "fundrama" || provider === "microdrama"
+              ? [
+                  withCode(`${base}/search?q=${encodeURIComponent(query.includes(" ") ? query : `${query} love`)}`),
+                  withCode(`${base}/search?q=${encoded}`),
+                ]
+              : [
+                  withCode(`${base}/search?q=${encoded}&lang=${lang}`),
+                  withCode(`${base}/api/search?q=${encoded}&lang=${lang}`),
+                  withCode(`${base}/search?keyword=${encoded}&lang=${lang}`),
+                ];
 
-  for (const path of paths) {
-    const res = await fetchJson(path);
+  for (const path of paths.slice(0, 2)) {
+    const res = await fetchJson(path, { timeoutMs, revalidate: 60 });
     if (!res.ok) continue;
     const cards = normalizeCards(res.data, provider);
-    if (cards.length) return localizeCards(cards);
+    if (cards.length) return cards;
   }
-
   return [];
+}
+
+/**
+ * Fast multi-provider search with query expansion + relevance ranking.
+ * Skips full title translation until after ranking to keep latency low.
+ */
+export async function searchCatalog(q: string, limit = 60): Promise<DramaCard[]> {
+  const query = q.trim();
+  if (!query) return [];
+
+  const expansions = expandSearchQueries(query);
+  // Primary query + best English expansion (if different)
+  const queries = [expansions[0], expansions.find((x) => x !== expansions[0] && /^[\x00-\x7F]+$/.test(x))]
+    .filter((x): x is string => Boolean(x))
+    .slice(0, 2);
+
+  const batches = await Promise.all(
+    SEARCH_PROVIDERS.map(async (provider) => {
+      const perQuery = await Promise.all(
+        queries.map((term) => searchProviderFast(provider, term).catch(() => [] as DramaCard[])),
+      );
+      return dedupe(perQuery.flat());
+    }),
+  );
+
+  const merged = dedupe(batches.flat());
+  const ranked = merged
+    .map((card) => ({ card, score: relevanceScore(card, query, expansions) }))
+    .sort((a, b) => b.score - a.score || (b.card.likes || 0) - (a.card.likes || 0))
+    .map((row) => row.card)
+    // Keep weak matches out when we have stronger ones
+    .filter((card, index, arr) => {
+      const score = relevanceScore(card, query, expansions);
+      if (score >= 28) return true;
+      if (arr.length < 12) return score >= 8;
+      return false;
+    })
+    .slice(0, limit);
+
+  // Translate only the ranked slice (much faster than translating every provider dump)
+  return localizeCards(ranked);
+}
+
+/** Search API */
+export async function searchDramas(q: string, provider = DEFAULT_PROVIDER): Promise<DramaCard[]> {
+  if (!q.trim()) return getTrending(provider);
+  if (!provider || provider === "all") return searchCatalog(q);
+  const cards = await searchProviderFast(provider, expandSearchQueries(q)[0] || q.trim());
+  return localizeCards(cards);
 }
 
 /** Genre & Category API */

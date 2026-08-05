@@ -10,7 +10,7 @@ import {
   getHomepageCatalog,
   getLatest,
   getTrending,
-  searchDramas,
+  searchCatalog,
 } from "@/lib/dramabos";
 import { auth } from "@/lib/auth";
 import { topByEngagement } from "@/lib/engagement";
@@ -27,13 +27,68 @@ export default async function HomePage({
   const { q } = await searchParams;
   const session = await auth();
   const city = session?.user?.city || "Jakarta";
+  const query = q?.trim() || "";
+
+  // Search mode: skip homepage rails / multi-provider catalog work.
+  if (query) {
+    const started = Date.now();
+    const results = mergeLocalLikes(await searchCatalog(query, 72));
+    const ms = Date.now() - started;
+
+    return (
+      <div className="pb-24">
+        <Suspense fallback={null}>
+          <SearchBar />
+        </Suspense>
+
+        <section className="border-b-2 border-[var(--color-divider)] px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="m-0 text-[19px]">Hasil untuk “{query}”</h2>
+              <p className="text-muted m-0 mt-1 text-xs">
+                {results.length
+                  ? `${results.length} drama cocok · ${Math.max(1, Math.round(ms / 100) / 10)} dtk`
+                  : "Tidak ada hasil. Coba kata lain seperti CEO, balas dendam, atau fantasi."}
+              </p>
+            </div>
+            <Link href="/" className="btn shrink-0 text-[13px]">
+              Reset
+            </Link>
+          </div>
+        </section>
+
+        {results.length ? (
+          <div className="grid grid-cols-2 gap-3 px-4 py-4">
+            {results.map((item) => (
+              <VideoCard
+                key={`search-${item.source}-${item.provider}-${item.id}`}
+                item={item}
+                widthClass="w-full"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="px-4 py-8">
+            <p className="text-muted m-0 text-sm">Saran pencarian cepat:</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {["CEO", "balas dendam", "cinta", "fantasi", "kontrak nikah", "baby"].map((hint) => (
+                <Link
+                  key={hint}
+                  href={`/?q=${encodeURIComponent(hint)}`}
+                  className="border border-[var(--color-divider)] px-3 py-1.5 text-[13px] text-[var(--color-text)]"
+                >
+                  {hint}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const [catalogRaw, ...providerBatches] = await Promise.all([
-    q
-      ? Promise.all(CATALOG_PROVIDERS.map((p) => searchDramas(q, p))).then((batches) =>
-          batches.flat(),
-        )
-      : getHomepageCatalog(240),
+    getHomepageCatalog(240),
     ...CATALOG_PROVIDERS.map(async (provider) => {
       const [trend, latest] = await Promise.all([
         getTrending(provider).catch(() => []),
@@ -80,11 +135,7 @@ export default async function HomePage({
 
       <HorizontalRail
         title="🔥 Lagi Populer"
-        subtitle={
-          q
-            ? `Hasil pencarian “${q}” dari semua sumber`
-            : "Kumpulan Drama terpopuler di AuraDracin"
-        }
+        subtitle="Kumpulan Drama terpopuler di AuraDracin"
         items={trending.slice(0, 60)}
       />
 
