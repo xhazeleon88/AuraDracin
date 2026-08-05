@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { FeaturedSlider } from "@/components/home/FeaturedSlider";
 import { HorizontalRail } from "@/components/home/HorizontalRail";
 import { SearchBar } from "@/components/home/SearchBar";
 import { VideoCard } from "@/components/video/VideoCard";
@@ -8,9 +9,11 @@ import {
   CATALOG_PROVIDERS,
   getHomepageCatalog,
   getLatest,
+  getTrending,
   searchDramas,
 } from "@/lib/dramabos";
 import { auth } from "@/lib/auth";
+import { topByEngagement } from "@/lib/engagement";
 import { providerDisplayName, providerSubtitle } from "@/lib/studios";
 import { listCityPopularDramaRefs, mergeLocalLikes } from "@/lib/videos";
 
@@ -25,25 +28,37 @@ export default async function HomePage({
   const session = await auth();
   const city = session?.user?.city || "Jakarta";
 
-  const [catalogRaw, ...latestBatches] = await Promise.all([
+  const [catalogRaw, ...providerBatches] = await Promise.all([
     q
       ? Promise.all(CATALOG_PROVIDERS.map((p) => searchDramas(q, p))).then((batches) =>
           batches.flat(),
         )
       : getHomepageCatalog(240),
-    ...CATALOG_PROVIDERS.map((p) => getLatest(p).catch(() => [])),
+    ...CATALOG_PROVIDERS.map(async (provider) => {
+      const [trend, latest] = await Promise.all([
+        getTrending(provider).catch(() => []),
+        getLatest(provider).catch(() => []),
+      ]);
+      return { provider, items: mergeLocalLikes([...trend, ...latest]) };
+    }),
   ]);
 
   const catalog = mergeLocalLikes(catalogRaw);
   const trending = catalog;
-  const latest = mergeLocalLikes(latestBatches.flat()).slice(0, 36);
-  const byProvider = (provider: string) =>
-    catalog.filter((c) => c.provider === provider).slice(0, 24);
+  const latest = mergeLocalLikes(
+    providerBatches.flatMap((batch) => batch.items),
+  ).slice(0, 36);
 
-  const featured = trending[0];
-  const featuredHref = featured
-    ? `/drama/${featured.provider}/${encodeURIComponent(featured.id)}`
-    : "/";
+  // Keep dedicated per-studio rails (e.g. ReelShort / GoodShort ~25 each)
+  // even when the interleaved catalog is dominated by other sources.
+  const providerRails = providerBatches
+    .map((batch) => ({
+      provider: batch.provider,
+      items: batch.items.slice(0, 25),
+    }))
+    .filter((rail) => rail.items.length > 0);
+
+  const featuredSlides = topByEngagement(catalog, 5);
 
   const cityRefs = listCityPopularDramaRefs(city, 12);
   const cityItems =
@@ -55,36 +70,13 @@ export default async function HomePage({
           .filter(Boolean)
       : trending.slice(8, 20);
 
-  const providerRails = CATALOG_PROVIDERS.map((provider) => ({
-    provider,
-    items: byProvider(provider),
-  })).filter((rail) => rail.items.length > 0);
-
   return (
     <div className="pb-24">
       <Suspense fallback={null}>
         <SearchBar />
       </Suspense>
 
-      {featured ? (
-        <section className="relative h-[380px] overflow-hidden border-b-2 border-[var(--color-divider)]">
-          <img
-            src={featured.cover}
-            alt={featured.title}
-            className="h-full w-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-neutral-900)] via-[var(--color-neutral-900)]/30 to-transparent" />
-          <div className="absolute bottom-[18px] left-4 right-4 flex flex-col gap-2">
-            <span className="tag tag-accent w-fit">Unggulan</span>
-            <h2 className="text-2xl text-[var(--color-neutral-100)]">{featured.title}</h2>
-            <Link href={featuredHref} className="btn btn-primary w-fit">
-              <i className="fa-solid fa-play" />
-              Tonton sekarang
-            </Link>
-          </div>
-        </section>
-      ) : null}
+      {featuredSlides.length ? <FeaturedSlider items={featuredSlides} /> : null}
 
       <HorizontalRail
         title="🔥 Lagi Populer"

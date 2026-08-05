@@ -35,7 +35,8 @@ function cardKey(card: Pick<DramaCard, "provider" | "id">) {
 /**
  * Fill missing likes/views with realistic baselines derived from API samples
  * in the same batch. Baselines are deterministic per title so they don't jump
- * on refresh. Real API values are kept as-is.
+ * on refresh. Extreme API outliers (e.g. platform-wide view totals) are softened
+ * so cards stay visually consistent.
  */
 export function applyEngagementBaselines<T extends DramaCard>(cards: T[]): T[] {
   if (!cards.length) return cards;
@@ -46,7 +47,7 @@ export function applyEngagementBaselines<T extends DramaCard>(cards: T[]): T[] {
     48_000,
   );
   const viewRange = rangeFromSamples(
-    cards.map((c) => c.views || 0),
+    cards.map((c) => c.views || 0).filter((n) => n > 0 && n < 5_000_000),
     18_000,
     920_000,
   );
@@ -77,11 +78,29 @@ export function applyEngagementBaselines<T extends DramaCard>(cards: T[]): T[] {
       }
     }
 
+    // Soft-cap absurd platform totals so UI stays readable on narrow cards.
+    if (likes > 0 && views > likes * 80) {
+      views = Math.round(likes * (18 + u3 * 32));
+    } else if (views > 3_500_000) {
+      views = lerp(viewRange.min, Math.max(viewRange.max, 1_500_000), Math.pow(u2, 0.55));
+    }
+
     // Keep views ahead of likes when both were filled/present.
     if (views < likes) views = Math.round(likes * (14 + u3 * 20));
 
     return { ...card, likes, views };
   });
+}
+
+/** Rank score for Unggulan / popular sorting. */
+export function engagementScore(card: Pick<DramaCard, "views" | "likes">) {
+  return (card.views || 0) + (card.likes || 0) * 20;
+}
+
+export function topByEngagement<T extends DramaCard>(cards: T[], limit = 5): T[] {
+  return [...cards]
+    .sort((a, b) => engagementScore(b) - engagementScore(a))
+    .slice(0, limit);
 }
 
 export function enrichDramaEngagement(detail: DramaDetail): DramaDetail {

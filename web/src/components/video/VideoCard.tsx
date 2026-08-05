@@ -51,16 +51,20 @@ export function VideoCard({
         ) : null}
       </div>
       <div className="line-clamp-2 text-[13px] font-semibold leading-snug">{item.title}</div>
-      <div className="flex items-center gap-2 text-[11px] text-[var(--color-neutral-500)]">
-        <span className="inline-flex items-center gap-1">
-          <i className="fa-solid fa-eye text-[12px]" />
-          {fmtNum(item.views || 0)}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <i className="fa-solid fa-heart text-[12px] text-[var(--color-accent)]" />
-          {fmtNum(item.likes || 0)}
-        </span>
-        {item.episodeCount ? <span>· {item.episodeCount} eps</span> : null}
+      <div className="flex flex-col gap-0.5 text-[11px] text-[var(--color-neutral-500)]">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+            <i className="fa-solid fa-eye text-[11px]" />
+            {fmtNum(item.views || 0)}
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+            <i className="fa-solid fa-heart text-[11px] text-[var(--color-accent)]" />
+            {fmtNum(item.likes || 0)}
+          </span>
+        </div>
+        {item.episodeCount ? (
+          <span className="whitespace-nowrap">{item.episodeCount} eps</span>
+        ) : null}
       </div>
     </Link>
   );

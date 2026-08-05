@@ -48,11 +48,11 @@ export const DRAMABOS_PROVIDERS = [
 export function fmtNum(n: number) {
   if (n >= 1_000_000) {
     const v = (n / 1_000_000).toFixed(1).replace(/\.0$/, "");
-    return `${v.replace(".", ",")} jt`;
+    return `${v.replace(".", ",")}jt`;
   }
   if (n >= 1000) {
     const v = (n / 1000).toFixed(1).replace(/\.0$/, "");
-    return `${v.replace(".", ",")} rb`;
+    return `${v.replace(".", ",")}rb`;
   }
   return String(n);
 }
