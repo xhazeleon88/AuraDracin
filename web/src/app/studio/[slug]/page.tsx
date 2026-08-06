@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { StudioLogo } from "@/components/studio/StudioLogo";
 import { VideoCard } from "@/components/video/VideoCard";
 import { getProviderRail, isPlayableProvider } from "@/lib/dramabos";
 import { getStudioProfile, isKnownStudio, listStudioProfiles } from "@/lib/studios";
@@ -54,14 +55,14 @@ export default async function StudioDetailPage({
 
           <div className="flex items-end gap-3.5">
             <div
-              className="flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden border-2 bg-[var(--color-bg)]"
+              className="flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden border-2 bg-white"
               style={{ borderColor: studio.accent }}
             >
-              <img
+              <StudioLogo
                 src={studio.logo}
-                alt={studio.name}
-                className="h-12 w-12 object-contain"
-                referrerPolicy="no-referrer"
+                name={studio.name}
+                accent={studio.accent}
+                className="h-14 w-14 object-contain"
               />
             </div>
             <div className="min-w-0 pb-1">
@@ -112,12 +113,9 @@ export default async function StudioDetailPage({
               href={`/studio/${s.id}`}
               className="flex shrink-0 items-center gap-2 border border-[var(--color-divider)] px-3 py-2 text-[13px] text-[var(--color-text)] no-underline"
             >
-              <img
-                src={s.logo}
-                alt=""
-                className="h-5 w-5 object-contain"
-                referrerPolicy="no-referrer"
-              />
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden bg-white">
+                <StudioLogo src={s.logo} name={s.name} accent={s.accent} className="h-5 w-5 object-contain" />
+              </span>
               {s.name}
             </Link>
           ))}

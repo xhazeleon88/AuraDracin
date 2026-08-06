@@ -2,10 +2,10 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Aura Dracin",
-    short_name: "Aura Dracin",
+    name: "AuraDracin",
+    short_name: "AuraDracin",
     description:
-      "Nonton Dracin (Drama Cina) portrait-first buat millennials & Gen Z.",
+      "Nonton dracin favoritmu dengan cerita singkat, romantis, dan penuh emosi hanya di AuraDracin. Sekali play, susah berhenti.",
     start_url: "/",
     scope: "/",
     display: "standalone",

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { StudioLogo } from "@/components/studio/StudioLogo";
 import { isPlayableProvider } from "@/lib/dramabos";
 import { listStudioProfiles } from "@/lib/studios";
 
@@ -30,12 +31,12 @@ export default function StudioIndexPage() {
                 background: `linear-gradient(120deg, ${studio.accent} 0%, #1a1a1a 58%, #0d0d0d 100%)`,
               }}
             >
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden border border-white/30 bg-black/35">
-                <img
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden border border-white/30 bg-white">
+                <StudioLogo
                   src={studio.logo}
-                  alt={studio.name}
-                  className="h-10 w-10 object-contain"
-                  referrerPolicy="no-referrer"
+                  name={studio.name}
+                  accent={studio.accent}
+                  className="h-12 w-12 object-contain"
                 />
               </div>
               <div className="min-w-0 text-white">

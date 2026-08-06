@@ -86,8 +86,14 @@ export const PLAYABLE_PROVIDERS = [
   "flareflow",
 ] as const;
 
-/** Featured studio rails — dedicated 25+25 rails / Unggulan pin behavior. */
-export const FEATURED_STUDIO_PROVIDERS = ["reelshort", "goodshort"] as const;
+/** Featured studio rails on the homepage (Workers + local). */
+export const FEATURED_STUDIO_PROVIDERS = [
+  "reelshort",
+  "goodshort",
+  "shortmax",
+  "idrama",
+  "dramabox",
+] as const;
 
 export function isPlayableProvider(provider: string) {
   return (PLAYABLE_PROVIDERS as readonly string[]).includes(provider);

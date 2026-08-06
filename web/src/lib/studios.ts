@@ -53,14 +53,6 @@ const BRAND_NAMES: Record<string, string> = {
   happyshort: "HappyShort",
 };
 
-const LOGO_EXT: Record<string, string> = {
-  starshort: "png",
-  microdrama: "png",
-  happyshort: "png",
-  pinedrama: "jpeg",
-  golddrama: "jpeg",
-};
-
 const STUDIO_COPY: Record<string, { tagline: string; about: string; accent: string }> = {
   reelshort: {
     tagline: "Drama pendek full twist",
@@ -197,11 +189,11 @@ export function getStudioProfile(id: string): StudioProfile {
     about: `${providerDisplayName(key)} menghadirkan koleksi drama pendek untuk penonton AuraDracin. Streaming eksklusif di sini.`,
     accent: "#E11D48",
   };
-  const ext = LOGO_EXT[key] || "svg";
   return {
     id: key,
     name: providerDisplayName(key),
-    logo: `https://api.dramabuzz.sbs/logos/${key}.${ext}`,
+    // Local PNGs — remote DramaBuzz SVGs (webp-in-svg) break in many browsers.
+    logo: `/studios/${key}.png`,
     tagline: copy.tagline,
     about: copy.about,
     accent: copy.accent,
