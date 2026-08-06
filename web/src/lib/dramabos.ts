@@ -37,29 +37,75 @@ const PROVIDER_HOST: Record<string, string> = {
   netshort: "https://netshort.goodbos.online",
   dramawave: "https://dramawave.goodbos.online",
   happyshort: "https://happyshort.goodbos.online",
+  flextv: "https://flextv.goodbos.online",
+  bilitv: "https://bilitv.goodbos.online",
+  velolo: "https://velolo.goodbos.online",
+  stardusttv: "https://stardusttv2.goodbos.online",
+  serialplus: "https://serealplus.goodbos.online",
+  dotdrama: "https://dotdrama.goodbos.online",
+  rapidtv: "https://rapidtv.goodbos.online",
+  shortswave: "https://shortwave.goodbos.online",
+  dramanova: "https://dramanova.goodbos.online",
+  cubetv: "https://cubetv.goodbos.online",
+  reelbuzz: "https://reelbuzz.goodbos.online",
+  moboreels: "https://moboreels.goodbos.online",
+  reelife: "https://reelife.goodbos.online",
+  raptdrama: "https://raptdrama.goodbos.online",
+  bonustv: "https://bonustv.goodbos.online",
+  minitv: "https://minitv.goodbos.online",
+  bstation: "https://weanim.goodbos.online",
+  joyreels: "https://joyreels.goodbos.online",
+  kalostv: "https://kalostv.goodbos.online",
+  vibeshort: "https://vibeshort.goodbos.online",
+  topdrama: "https://topdrama.goodbos.online",
+  dramaboxv3: "https://m.dracind.com",
+  storyreel: "https://storyreel.goodbos.online",
 };
 
-/** Providers we know how to list in studio directories (feeds may work). */
+/** Providers we list in studio directories (feeds may work even if stream is flaky). */
 export const CATALOG_PROVIDERS = [
   "reelshort",
   "goodshort",
-  "dramabite",
+  "shortmax",
+  "idrama",
+  "dramabox",
+  "dramawave",
+  "netshort",
+  "melolo",
+  "flickreels",
   "pinedrama",
   "golddrama",
-  "flickreels",
-  "idrama",
-  "netshort",
-  "dramawave",
-  "melolo",
-  "starshort",
+  "freereels",
   "fundrama",
   "microdrama",
-  "vigloo",
-  "freereels",
-  "shortmax",
-  "dramabox",
-  "flareflow",
   "happyshort",
+  "flareflow",
+  "dramabite",
+  "starshort",
+  "vigloo",
+  "flextv",
+  "bilitv",
+  "velolo",
+  "stardusttv",
+  "serialplus",
+  "dotdrama",
+  "rapidtv",
+  "shortswave",
+  "dramanova",
+  "cubetv",
+  "reelbuzz",
+  "moboreels",
+  "reelife",
+  "raptdrama",
+  "bonustv",
+  "minitv",
+  "bstation",
+  "joyreels",
+  "kalostv",
+  "vibeshort",
+  "topdrama",
+  "dramaboxv3",
+  "storyreel",
 ] as const;
 
 /**
@@ -1358,6 +1404,30 @@ export async function getByGenre(
 
   void encoded;
   return [];
+}
+
+/** Same-studio related titles for the watch page (genre → rail fallback). */
+export async function getRelatedDramas(opts: {
+  provider: string;
+  id: string;
+  category?: string;
+  limit?: number;
+}): Promise<DramaCard[]> {
+  const limit = Math.max(1, opts.limit ?? 5);
+  const exclude = String(opts.id);
+  const category = String(opts.category || "romance");
+
+  const fromGenre = await getByGenre(category, opts.provider).catch(() => [] as DramaCard[]);
+  let merged = dedupe(fromGenre).filter((c) => c.id !== exclude);
+
+  if (merged.length < limit) {
+    const rail = await getProviderRail(opts.provider, Math.max(12, limit * 3)).catch(
+      () => [] as DramaCard[],
+    );
+    merged = dedupe([...merged, ...rail.filter((c) => c.id !== exclude)]);
+  }
+
+  return merged.slice(0, limit);
 }
 
 function syntheticEpisodes(base: DramaCard, count?: number) {

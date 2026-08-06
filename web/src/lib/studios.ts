@@ -9,26 +9,53 @@ export type StudioProfile = {
   accent: string;
 };
 
+/** Full DramaBos / DramaBuzz catalog (status API + dramabos.live/providers). */
 export const STUDIO_IDS = [
   "reelshort",
   "goodshort",
-  "dramabite",
+  "shortmax",
+  "idrama",
+  "dramabox",
+  "dramawave",
+  "netshort",
+  "melolo",
+  "flickreels",
   "pinedrama",
   "golddrama",
-  "flickreels",
-  "idrama",
-  "netshort",
-  "dramawave",
-  "starshort",
+  "freereels",
   "fundrama",
   "microdrama",
-  "vigloo",
-  "freereels",
-  "shortmax",
-  "dramabox",
-  "flareflow",
-  "melolo",
   "happyshort",
+  "flareflow",
+  "dramabite",
+  "starshort",
+  "vigloo",
+  "flextv",
+  "bilitv",
+  "velolo",
+  "stardusttv",
+  "serialplus",
+  "dotdrama",
+  "rapidtv",
+  "shortswave",
+  "dramanova",
+  "cubetv",
+  "reelbuzz",
+  "moboreels",
+  "reelife",
+  "raptdrama",
+  "bonustv",
+  "minitv",
+  "bstation",
+  "joyreels",
+  "kalostv",
+  "vibeshort",
+  "topdrama",
+  "dramaboxv3",
+  "storyreel",
+  "reelala",
+  "anyreel",
+  "iqiyi",
 ] as const;
 
 const BRAND_NAMES: Record<string, string> = {
@@ -51,7 +78,56 @@ const BRAND_NAMES: Record<string, string> = {
   flareflow: "FlareFlow",
   melolo: "Melolo",
   happyshort: "HappyShort",
+  flextv: "FlexTV",
+  bilitv: "BiliTV",
+  velolo: "Velolo",
+  stardusttv: "StardustTV",
+  serialplus: "Serial+",
+  dotdrama: "DotDrama",
+  rapidtv: "RapidTV",
+  shortswave: "ShortsWave",
+  dramanova: "DramaNova",
+  cubetv: "CubeTV",
+  reelbuzz: "ReelBuzz",
+  moboreels: "MoboReels",
+  reelife: "Reelife",
+  raptdrama: "RaptDrama",
+  bonustv: "BonusTV",
+  minitv: "MiniTV",
+  bstation: "Bstation",
+  joyreels: "Joyreels",
+  kalostv: "KalosTV",
+  vibeshort: "Vibeshort",
+  topdrama: "TopDrama",
+  dramaboxv3: "DramaBox V3",
+  storyreel: "Storyreel",
+  reelala: "Reelala",
+  anyreel: "Anyreel",
+  iqiyi: "iQIYI",
 };
+
+const ACCENT_PALETTE = [
+  "#E11D48",
+  "#DC2626",
+  "#F97316",
+  "#16A34A",
+  "#CA8A04",
+  "#FB3867",
+  "#2563EB",
+  "#0EA5E9",
+  "#7C3AED",
+  "#DB2777",
+  "#EA580C",
+  "#9333EA",
+  "#0891B2",
+  "#65A30D",
+  "#B45309",
+  "#F43F5E",
+  "#EC4899",
+  "#F59E0B",
+  "#4F46E5",
+  "#059669",
+];
 
 const STUDIO_COPY: Record<string, { tagline: string; about: string; accent: string }> = {
   reelshort: {
@@ -170,6 +246,12 @@ const STUDIO_COPY: Record<string, { tagline: string; about: string; accent: stri
   },
 };
 
+function accentFor(id: string) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return ACCENT_PALETTE[hash % ACCENT_PALETTE.length];
+}
+
 export function providerDisplayName(id: string) {
   const key = id.toLowerCase();
   if (BRAND_NAMES[key]) return BRAND_NAMES[key];
@@ -184,15 +266,15 @@ export function providerSubtitle(id: string) {
 
 export function getStudioProfile(id: string): StudioProfile {
   const key = id.toLowerCase();
+  const name = providerDisplayName(key);
   const copy = STUDIO_COPY[key] || {
     tagline: "Studio drama pendek",
-    about: `${providerDisplayName(key)} menghadirkan koleksi drama pendek untuk penonton AuraDracin. Streaming eksklusif di sini.`,
-    accent: "#E11D48",
+    about: `${name} menghadirkan koleksi drama pendek untuk penonton AuraDracin. Jelajahi katalognya di sini.`,
+    accent: accentFor(key),
   };
   return {
     id: key,
-    name: providerDisplayName(key),
-    // Local PNGs — remote DramaBuzz SVGs (webp-in-svg) break in many browsers.
+    name,
     logo: `/studios/${key}.png`,
     tagline: copy.tagline,
     about: copy.about,
@@ -205,5 +287,5 @@ export function listStudioProfiles() {
 }
 
 export function isKnownStudio(id: string) {
-  return (STUDIO_IDS as readonly string[]).includes(id.toLowerCase());
+  return (STUDIO_IDS as readonly string[]).includes(id.toLowerCase() as (typeof STUDIO_IDS)[number]);
 }

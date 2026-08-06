@@ -18,15 +18,18 @@ export default async function StudioDetailPage({
   if (!isKnownStudio(id)) notFound();
 
   const studio = getStudioProfile(id);
-  const playable = isPlayableProvider(id);
-  const catalog = playable
-    ? await mergeLocalLikes(await getProviderRail(id, 48).catch(() => []))
-    : [];
+  // Try catalog for every known studio — many non-featured hosts still expose feeds.
+  const catalog = await mergeLocalLikes(await getProviderRail(id, 48).catch(() => []));
 
   const hero = catalog[0]?.cover || "";
   const others = listStudioProfiles()
-    .filter((s) => s.id !== id && isPlayableProvider(s.id))
-    .slice(0, 8);
+    .filter((s) => s.id !== id)
+    .sort((a, b) => {
+      const ap = isPlayableProvider(a.id) ? 0 : 1;
+      const bp = isPlayableProvider(b.id) ? 0 : 1;
+      return ap - bp;
+    })
+    .slice(0, 12);
 
   return (
     <div className="pb-24">
@@ -97,9 +100,7 @@ export default async function StudioDetailPage({
           </div>
         ) : (
           <p className="text-muted px-4 pt-3 text-sm">
-            {playable
-              ? `Katalog ${studio.name} sedang kosong. Coba studio lain dulu ya.`
-              : `Streaming ${studio.name} belum tersedia di AuraDracin. Coba ReelShort atau GoodShort dulu ya.`}
+            Katalog {studio.name} sedang kosong atau belum bisa diambil. Coba studio lain dulu ya.
           </p>
         )}
       </section>

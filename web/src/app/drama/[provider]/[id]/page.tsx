@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CoverImage } from "@/components/video/CoverImage";
 import { EngagementRail } from "@/components/video/Engagement";
 import { LazyHlsPlayer as HlsPlayer } from "@/components/video/LazyHlsPlayer";
 import { auth } from "@/lib/auth";
 import { fmtNum } from "@/lib/constants";
 import { dbFirst, subtitlesGenerationEnabled } from "@/lib/db";
-import { getDramaDetail, getStream } from "@/lib/dramabos";
+import { getDramaDetail, getRelatedDramas, getStream } from "@/lib/dramabos";
 import { enrichDramaEngagement } from "@/lib/engagement";
 import { getBahasaSubtitles } from "@/lib/subtitles";
 import { providerDisplayName } from "@/lib/studios";
-import { countLocalLikes, recordView } from "@/lib/videos";
+import { countLocalLikes, mergeLocalLikes, recordView } from "@/lib/videos";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,17 @@ export default async function DramaWatchPage({
   if (!rawDetail) notFound();
   const detail = enrichDramaEngagement(rawDetail);
 
-  const stream = await getStream(provider, detail.id, episode);
+  const [stream, relatedRaw] = await Promise.all([
+    getStream(provider, detail.id, episode),
+    getRelatedDramas({
+      provider,
+      id: detail.id,
+      category: detail.category,
+      limit: 5,
+    }).catch(() => []),
+  ]);
+  const related = await mergeLocalLikes(relatedRaw);
+
   const nextEpisode = detail.episodes.find((item) => item.number === episode + 1);
   const nextHref = nextEpisode
     ? `/drama/${provider}/${encodeURIComponent(detail.id)}?ep=${nextEpisode.number}`
@@ -115,7 +126,7 @@ export default async function DramaWatchPage({
         </div>
       </div>
 
-      <div className="shrink-0 space-y-2 border-t border-[var(--color-neutral-800)] px-4 py-3.5">
+      <div className="max-h-[42vh] shrink-0 space-y-2 overflow-y-auto border-t border-[var(--color-neutral-800)] px-4 py-3.5">
         <div className="flex items-center gap-2">
           <span className="text-[13px] font-extrabold">@{providerDisplayName(detail.provider)}</span>
           <span className="tag bg-[#fff2ef] text-[10px] text-[#7c1405]">
@@ -165,6 +176,30 @@ export default async function DramaWatchPage({
             );
           })}
         </div>
+
+        {related.length ? (
+          <div className="space-y-2 border-t border-[var(--color-neutral-800)] pt-3">
+            <h3 className="m-0 text-[14px] font-extrabold text-[var(--color-neutral-100)]">
+              Drama terkait
+            </h3>
+            <div className="flex gap-2.5 overflow-x-auto pb-1">
+              {related.map((item) => (
+                <Link
+                  key={`${item.provider}-${item.id}`}
+                  href={`/drama/${item.provider}/${encodeURIComponent(item.id)}`}
+                  className="w-[108px] shrink-0 text-[var(--color-neutral-100)] no-underline"
+                >
+                  <div className="portrait-card relative overflow-hidden rounded-sm">
+                    <CoverImage src={item.cover} alt={item.title} />
+                  </div>
+                  <div className="mt-1.5 line-clamp-2 text-[11px] font-semibold leading-snug text-white/90">
+                    {item.title}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

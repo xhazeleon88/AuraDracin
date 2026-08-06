@@ -6,15 +6,20 @@ import { listStudioProfiles } from "@/lib/studios";
 export const dynamic = "force-dynamic";
 
 export default function StudioIndexPage() {
-  // Only studios with working playback — others currently 404 on open.
-  const studios = listStudioProfiles().filter((s) => isPlayableProvider(s.id));
+  // Full DramaBos catalog — playable studios first for easier discovery.
+  const studios = [...listStudioProfiles()].sort((a, b) => {
+    const ap = isPlayableProvider(a.id) ? 0 : 1;
+    const bp = isPlayableProvider(b.id) ? 0 : 1;
+    if (ap !== bp) return ap - bp;
+    return a.name.localeCompare(b.name, "id");
+  });
 
   return (
     <div className="pb-24">
       <div className="border-b-2 border-[var(--color-divider)] px-4 py-5">
         <h1 className="text-[22px]">Studio</h1>
         <p className="text-muted m-0 mt-1 text-sm">
-          Pilih studio drama favoritmu. Semua streaming eksklusif di AuraDracin.
+          {studios.length} studio drama pendek dari DramaBos. Streaming eksklusif di AuraDracin.
         </p>
       </div>
 
