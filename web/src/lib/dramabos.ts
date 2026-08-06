@@ -1,4 +1,4 @@
-import { translateToBahasa } from "./translate";
+import { looksEnglish, translateToBahasa } from "./translate";
 import { toDramaTitleCase } from "./titleCase";
 import type { DramaCard, DramaDetail, StreamResult } from "./types";
 
@@ -497,14 +497,79 @@ function normalizeCards(data: unknown, provider: string): DramaCard[] {
   );
 }
 
+/** Strip CDN size/query noise so locale variants sharing art collapse together. */
+function normalizeCoverKey(cover: string) {
+  const raw = cover.trim();
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    let path = u.pathname.toLowerCase();
+    path = path.replace(/\/(w|h|c|s)\d+[^/]*$/i, "");
+    path = path.replace(
+      /[_-](small|medium|large|thumb|cover|resized?\d*)\.(jpe?g|png|webp|avif)$/i,
+      ".$2",
+    );
+    return `${u.hostname.toLowerCase()}${path}`;
+  } catch {
+    return raw.split(/[?#]/)[0].toLowerCase();
+  }
+}
+
+function titleLocaleScore(title: string) {
+  const t = title.trim();
+  if (
+    /\b(yang|dengan|dari|untuk|adalah|ternyata|seorang|di bawah|satu|atap|kisah|cinta|ganda|aku|dia|suami|istri|bos|mantan|keluarga|rahasia|balas|dendam)\b/i.test(
+      t,
+    )
+  ) {
+    return 3;
+  }
+  if (looksEnglish(t)) return 2;
+  // Latin but not ID/EN — often Tagalog or other regional titles.
+  if (/^[\x00-\x7F]+$/.test(t) && /[A-Za-z]{3,}/.test(t)) return 1;
+  return 0;
+}
+
+function engagementScore(card: DramaCard) {
+  return (card.views || 0) + (card.likes || 0) * 10;
+}
+
+function preferLocaleCard(a: DramaCard, b: DramaCard) {
+  const sa = titleLocaleScore(a.title);
+  const sb = titleLocaleScore(b.title);
+  if (sa !== sb) return sa > sb ? a : b;
+  const ea = engagementScore(a);
+  const eb = engagementScore(b);
+  if (ea !== eb) return ea > eb ? a : b;
+  return a;
+}
+
+/**
+ * Collapse exact id dupes, then same-provider locale variants that share cover art
+ * (e.g. DramaWave EN / ID / Tagalog rows for one show).
+ */
 function dedupe(cards: DramaCard[]) {
-  const seen = new Set<string>();
-  return cards.filter((c) => {
-    const key = `${c.provider}:${c.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const byId = new Map<string, DramaCard>();
+  for (const card of cards) {
+    const key = `${card.provider}:${card.id}`;
+    if (!byId.has(key)) byId.set(key, card);
+  }
+
+  const out: DramaCard[] = [];
+  const coverIndex = new Map<string, number>();
+  for (const card of byId.values()) {
+    const coverKey = card.cover
+      ? `${card.provider}:${normalizeCoverKey(card.cover)}`
+      : "";
+    if (coverKey && coverIndex.has(coverKey)) {
+      const idx = coverIndex.get(coverKey)!;
+      out[idx] = preferLocaleCard(out[idx], card);
+      continue;
+    }
+    if (coverKey) coverIndex.set(coverKey, out.length);
+    out.push(card);
+  }
+  return out;
 }
 
 async function localizeCard(card: DramaCard): Promise<DramaCard> {
@@ -666,7 +731,7 @@ export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promis
     paths = [
       withCode(`${host}/api/search?q=love+story&lang=${lang}`),
       withCode(`${host}/api/search?q=ceo+love&lang=${lang}`),
-      withCode(`${host}/api/search?q=love&lang=en`),
+      withCode(`${host}/api/search?q=romance&lang=${lang}`),
     ];
   } else if (provider === "netshort") {
     paths = [

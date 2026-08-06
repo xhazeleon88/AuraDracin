@@ -10,18 +10,27 @@ const archivo = Archivo({
   variable: "--font-archivo",
 });
 
+const SITE_URL =
+  process.env.AUTH_URL?.replace(/\/$/, "") ||
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+  "https://aura-dracin.seo1-c33.workers.dev";
+
+const SITE_TITLE = "AuraDracin - Drama Singkat Baper Melekat";
+const SITE_DESCRIPTION =
+  "Nonton dracin favoritmu dengan cerita singkat, romantis, dan penuh emosi hanya di AuraDracin. Sekali play, susah berhenti.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "Aura Dracin — Nonton Dracin, Rasain Auranya",
-    template: "%s | Aura Dracin",
+    default: SITE_TITLE,
+    template: "%s | AuraDracin",
   },
-  description:
-    "Nonton Dracin (Drama Cina) portrait-first buat millennials & Gen Z. Lagi populer, terbaru, kategori, dan feed DramaBos.",
-  applicationName: "Aura Dracin",
+  description: SITE_DESCRIPTION,
+  applicationName: "AuraDracin",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Aura Dracin",
+    title: "AuraDracin",
   },
   formatDetection: {
     telephone: false,
@@ -33,6 +42,28 @@ export const metadata: Metadata = {
       { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [{ url: "/icons/icon-180.png", sizes: "180x180", type: "image/png" }],
+  },
+  openGraph: {
+    type: "website",
+    locale: "id_ID",
+    url: SITE_URL,
+    siteName: "AuraDracin",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [
+      {
+        url: "/og-image.jpg",
+        width: 1200,
+        height: 630,
+        alt: "AuraDracin - Drama Singkat Baper Melekat",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: ["/og-image.jpg"],
   },
   other: {
     "mobile-web-app-capable": "yes",
