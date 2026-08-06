@@ -44,6 +44,24 @@ async function HomeCatalog() {
         items={snap.trending}
       />
 
+      <section className="border-t-2 border-[var(--color-divider)] py-5">
+        <div className="px-4">
+          <h3 className="m-0 text-[19px]">📂 Kategori Cerita</h3>
+          <div className="mt-2 flex gap-2 overflow-x-auto">
+            {CATEGORIES.map((c) => (
+              <Link
+                key={c.slug}
+                href={`/kategori/${c.slug}`}
+                className="shrink-0 border border-[var(--color-divider)] px-3.5 py-2 text-[13px] text-[var(--color-text)]"
+              >
+                <i className={`fa-solid ${c.icon} mr-1.5`} />
+                {c.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {snap.providerRails.map((rail) => (
         <HorizontalRail
           key={rail.provider}
@@ -83,22 +101,6 @@ export default function HomePage() {
       <Suspense fallback={<RailSkeleton title="Unggulan & Populer" />}>
         <HomeCatalog />
       </Suspense>
-
-      <section className="border-t-2 border-[var(--color-divider)] py-5">
-        <h3 className="mb-3 px-4 text-[19px]">📂 Kategori Cerita</h3>
-        <div className="flex gap-2 overflow-x-auto px-4">
-          {CATEGORIES.map((c) => (
-            <Link
-              key={c.slug}
-              href={`/kategori/${c.slug}`}
-              className="shrink-0 border border-[var(--color-divider)] px-3.5 py-2 text-[13px] text-[var(--color-text)]"
-            >
-              <i className={`fa-solid ${c.icon} mr-1.5`} />
-              {c.label}
-            </Link>
-          ))}
-        </div>
-      </section>
 
       <Suspense fallback={<RailSkeleton title="📍 Lagi Rame di kotamu" />}>
         <CityPopularRail />
