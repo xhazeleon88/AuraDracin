@@ -61,25 +61,20 @@ export function InstallPrompt() {
 
     const onBip = (e: Event) => {
       e.preventDefault();
-      // Don't interrupt the first watch — wait until the user has been around a bit.
+      // Stash the event but never interrupt browsing automatically.
       setDeferred(e as BeforeInstallPromptEvent);
     };
     window.addEventListener("beforeinstallprompt", onBip);
 
     const t = window.setTimeout(() => {
       if (recentlyDismissed() || isStandalone() || isBotOrCrawler()) return;
-      // iOS Safari has no BIP — show a soft hint once/day after delay.
+      // Only auto-prompt on iOS Safari (no BIP). Android/desktop: wait for a future
+      // explicit install entry point so watch sessions aren't blocked.
       if (isIosSafari()) {
         setIosHint(true);
         setOpen(true);
-        return;
       }
-      // Other browsers: only open if BIP already fired AND user stayed ~8s.
-      setDeferred((current) => {
-        if (current) setOpen(true);
-        return current;
-      });
-    }, 8000);
+    }, 12000);
 
     if ("serviceWorker" in navigator && !isBotOrCrawler()) {
       navigator.serviceWorker.register("/sw.js").catch(() => {
