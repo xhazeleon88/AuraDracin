@@ -45,20 +45,20 @@ async function HomeCatalog() {
       />
 
       <section className="border-t-2 border-[var(--color-divider)] py-5">
-        <div className="px-4">
+        <div className="px-4 pb-1">
           <h3 className="m-0 text-[19px]">📂 Kategori Cerita</h3>
-          <div className="mt-2 flex gap-2 overflow-x-auto">
-            {CATEGORIES.map((c) => (
-              <Link
-                key={c.slug}
-                href={`/kategori/${c.slug}`}
-                className="shrink-0 border border-[var(--color-divider)] px-3.5 py-2 text-[13px] text-[var(--color-text)]"
-              >
-                <i className={`fa-solid ${c.icon} mr-1.5`} />
-                {c.label}
-              </Link>
-            ))}
-          </div>
+        </div>
+        <div className="flex gap-2 overflow-x-auto px-4 pt-3.5">
+          {CATEGORIES.map((c) => (
+            <Link
+              key={c.slug}
+              href={`/kategori/${c.slug}`}
+              className="shrink-0 border border-[var(--color-divider)] px-3.5 py-2 text-[13px] text-[var(--color-text)]"
+            >
+              <i className={`fa-solid ${c.icon} mr-1.5`} />
+              {c.label}
+            </Link>
+          ))}
         </div>
       </section>
 
