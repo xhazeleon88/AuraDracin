@@ -12,7 +12,7 @@ import {
   type HomeSnapshot,
 } from "./cf";
 import { mergeLocalLikes } from "./videos";
-import { withLiveTranslate } from "./translate";
+import { purgeIdentityTranslations, withLiveTranslate } from "./translate";
 
 const MEMORY_TTL_MS = 60_000;
 let memorySnap: { expires: number; value: HomeSnapshot } | null = null;
@@ -125,6 +125,8 @@ export async function getHomeSnapshot(): Promise<HomeSnapshot> {
 }
 
 export async function warmHomeSnapshot(): Promise<HomeSnapshot> {
+  // Drop English-identity cache rows so warm can refill Bahasa titles.
+  await purgeIdentityTranslations().catch(() => 0);
   const fresh = await buildHomeSnapshot();
   memorySnap = { value: fresh, expires: Date.now() + MEMORY_TTL_MS };
   await writeKvSnapshot(fresh);

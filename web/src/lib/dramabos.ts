@@ -516,8 +516,11 @@ async function localizeCard(card: DramaCard): Promise<DramaCard> {
 async function localizeCards(cards: DramaCard[]): Promise<DramaCard[]> {
   const out: DramaCard[] = new Array(cards.length);
   const queue = [...cards.entries()];
+  // Lower concurrency on Workers to keep Google Translate reliable.
+  const concurrency =
+    process.env.CLOUDFLARE_WORKERS === "1" ? 2 : Math.min(10, queue.length || 1);
   await Promise.all(
-    Array.from({ length: Math.min(10, queue.length || 1) }, async () => {
+    Array.from({ length: concurrency }, async () => {
       while (queue.length) {
         const next = queue.shift();
         if (!next) break;
