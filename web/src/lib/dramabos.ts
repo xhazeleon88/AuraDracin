@@ -1,4 +1,4 @@
-import { looksEnglish, translateToBahasa } from "./translate";
+import { looksEnglish, translateToBahasa, withLiveTranslate } from "./translate";
 import { toDramaTitleCase } from "./titleCase";
 import type { DramaCard, DramaDetail, StreamResult } from "./types";
 
@@ -181,10 +181,16 @@ function providerBase(provider: string) {
   return host;
 }
 
+/**
+ * Preferred catalog/detail language. Default site language is Indonesian.
+ * Some hosts only ship English catalogs — those still request "en" and we
+ * translate titles/synopsis to Bahasa in localize*.
+ */
 function feedLang(provider: string) {
-  if (provider === "reelshort" || DRAKULA_PROVIDERS.has(provider)) return "en";
-  if (provider === "happyshort") return "en";
-  // These hosts use ISO "id"; GoodShort-style hosts use "in" for Indonesian.
+  const preferred = (LANG || "id").toLowerCase();
+  const wantId = preferred === "id" || preferred === "in" || preferred === "id-id";
+
+  // Hosts that expose native Indonesian catalogs.
   if (
     provider === "idrama" ||
     provider === "melolo" ||
@@ -192,9 +198,27 @@ function feedLang(provider: string) {
     provider === "golddrama" ||
     provider === "pinedrama"
   ) {
-    return LANG || "id";
+    return wantId ? "id" : preferred;
   }
-  return LANG === "id" ? "in" : LANG;
+
+  // GoodShort-style hosts use "in" for Indonesian.
+  if (
+    provider === "goodshort" ||
+    provider === "shortmax" ||
+    provider === "dramabox" ||
+    provider === "dramawave" ||
+    provider === "netshort" ||
+    provider === "flickreels"
+  ) {
+    return wantId ? "in" : preferred;
+  }
+
+  // ReelShort / Drakula / HappyShort catalogs are English-only upstream.
+  if (provider === "reelshort" || DRAKULA_PROVIDERS.has(provider) || provider === "happyshort") {
+    return "en";
+  }
+
+  return wantId ? "in" : preferred;
 }
 
 /** Parse API counters that may be numbers or abbreviated strings ("1.2K", "3M"). */
@@ -760,14 +784,20 @@ async function localizeCards(cards: DramaCard[]): Promise<DramaCard[]> {
 }
 
 async function localizeDetail(detail: DramaDetail): Promise<DramaDetail> {
-  const base = await localizeCard(detail);
-  const episodes = await Promise.all(
-    detail.episodes.map(async (ep) => ({
-      ...ep,
-      title: toDramaTitleCase(await translateToBahasa(ep.title)),
-    })),
-  );
-  return { ...detail, ...base, episodes };
+  // Watch/detail must land in Bahasa even on cold Workers requests (D1 miss → live fill).
+  return withLiveTranslate(async () => {
+    const [base, synopsis] = await Promise.all([
+      localizeCard(detail),
+      detail.synopsis ? translateToBahasa(detail.synopsis) : Promise.resolve(""),
+    ]);
+    const episodes = await Promise.all(
+      detail.episodes.map(async (ep) => ({
+        ...ep,
+        title: toDramaTitleCase(await translateToBahasa(ep.title)),
+      })),
+    );
+    return { ...detail, ...base, synopsis: synopsis || base.synopsis || "", episodes };
+  });
 }
 
 /** Provider Status API */
@@ -879,9 +909,9 @@ export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promis
     ];
   } else if (provider === "happyshort") {
     paths = [
-      withCode(`${host}/api/hs/search?q=love+story&lang=en`),
-      withCode(`${host}/api/hs/search?q=ceo+love&lang=en`),
-      withCode(`${host}/api/hs/search?q=romance&lang=en`),
+      withCode(`${host}/api/hs/search?q=love+story&lang=${lang}`),
+      withCode(`${host}/api/hs/search?q=ceo+love&lang=${lang}`),
+      withCode(`${host}/api/hs/search?q=romance&lang=${lang}`),
     ];
   } else if (provider === "flareflow") {
     paths = [
@@ -899,7 +929,7 @@ export async function getTrending(provider = DEFAULT_PROVIDER, page = 1): Promis
     paths = [
       withCode(`${host}/api/search?q=love+story&lang=${lang}`),
       withCode(`${host}/api/search?q=ceo+love&lang=${lang}`),
-      withCode(`${host}/api/search?q=love&lang=en`),
+      withCode(`${host}/api/search?q=love&lang=${lang}`),
     ];
   } else if (provider === "melolo") {
     paths = [
@@ -1182,8 +1212,8 @@ async function searchProviderFast(provider: string, query: string): Promise<Dram
                     ]
                   : provider === "happyshort"
                     ? [
-                        withCode(`${host}/api/hs/search?q=${encodeURIComponent(twoWord)}&lang=en`),
-                        withCode(`${host}/api/hs/search?q=${encoded}&lang=en`),
+                        withCode(`${host}/api/hs/search?q=${encodeURIComponent(twoWord)}&lang=${lang}`),
+                        withCode(`${host}/api/hs/search?q=${encoded}&lang=${lang}`),
                       ]
                     : provider === "flareflow"
                       ? [
@@ -1392,7 +1422,10 @@ export async function getByGenre(
     withCode(`${base}/search?keyword=${encodeURIComponent(q)}&lang=${lang}&page=${page}`),
     withCode(`${base}/api/search?q=${encodeURIComponent(q)}&lang=${lang}&page=${page}`),
     withCode(`${base}/hot?lang=${lang}`),
-    `${base}/search?q=${encodeURIComponent(q)}&lang=en&page=${page}`,
+    // English fallback only when preferred lang is Indonesian — some hosts ignore `in`/`id`.
+    ...(lang === "en"
+      ? []
+      : [`${base}/search?q=${encodeURIComponent(q)}&lang=en&page=${page}`]),
   ];
 
   for (const path of paths) {
@@ -1747,7 +1780,8 @@ export async function getDramaDetail(
   }
 
   if (provider === "flickreels") {
-    const res = await fetchJson(withCode(`${host}/batchload/${encoded}?lang=en`));
+    const lang = feedLang(provider);
+    const res = await fetchJson(withCode(`${host}/batchload/${encoded}?lang=${lang}`));
     if (res.ok && res.data) {
       const data = unwrapData(res.data);
       const row = {
@@ -1847,7 +1881,8 @@ export async function getDramaDetail(
   }
 
   if (provider === "freereels") {
-    const res = await fetchJson(withCode(`${basePath}/drama/${encoded}?lang=en`));
+    const lang = feedLang(provider);
+    const res = await fetchJson(withCode(`${basePath}/drama/${encoded}?lang=${lang}`));
     if (res.ok && res.data) {
       const root = res.data as Record<string, unknown>;
       // Nested: data.data.info
@@ -1914,7 +1949,8 @@ export async function getDramaDetail(
   }
 
   if (provider === "microdrama") {
-    const res = await fetchJson(withCode(`${basePath}/drama/${encoded}?lang=en`));
+    const lang = feedLang(provider);
+    const res = await fetchJson(withCode(`${basePath}/drama/${encoded}?lang=${lang}`));
     if (res.ok && res.data) {
       const data = unwrapData(res.data);
       const nested =
@@ -1934,8 +1970,9 @@ export async function getDramaDetail(
   }
 
   if (provider === "happyshort") {
+    const lang = feedLang(provider);
     const detailRes = await fetchJson(
-      withCode(`${host}/api/hs/detail?id=${encoded}&lang=en`),
+      withCode(`${host}/api/hs/detail?id=${encoded}&lang=${lang}`),
     );
     const epsRes = await fetchJson(withCode(`${host}/api/hs/episodes?id=${encoded}`));
     if (detailRes.ok && detailRes.data) {
@@ -2164,7 +2201,8 @@ export async function getStream(
 
   if (provider === "reelshort") {
     // Prefer 540p / -ld H.264 — 720p+ is often HEVC (hvc1) which Chrome MSE cannot play.
-    const all = await fetchJson(withCode(`${host}/allepisodes/${encoded}?lang=en`));
+    const lang = feedLang(provider);
+    const all = await fetchJson(withCode(`${host}/allepisodes/${encoded}?lang=${lang}`));
     if (all.ok) {
       const root = all.data as Record<string, unknown> | undefined;
       const nested =
@@ -2307,7 +2345,8 @@ export async function getStream(
   }
 
   if (provider === "flickreels") {
-    const res = await fetchJson(withCode(`${host}/batchload/${encoded}?lang=en`));
+    const lang = feedLang(provider);
+    const res = await fetchJson(withCode(`${host}/batchload/${encoded}?lang=${lang}`));
     if (res.ok && res.data) {
       const data = unwrapData(res.data);
       const list = asArray(data.list || data.episodes || data);
@@ -2469,7 +2508,7 @@ export async function getDownloadLinks(provider: string, id: string) {
     return raw.ok ? raw.data : null;
   }
   const all = await fetchJson(
-    withCode(`${host}/allepisodes/${encodeURIComponent(id)}?lang=en`),
+    withCode(`${host}/allepisodes/${encodeURIComponent(id)}?lang=${feedLang(provider)}`),
   );
   return all.ok ? all.data : null;
 }

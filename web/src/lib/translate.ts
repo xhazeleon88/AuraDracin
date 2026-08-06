@@ -5,15 +5,15 @@ function hashKey(text: string) {
   return createHash("sha256").update(text.trim().toLowerCase()).digest("hex").slice(0, 32);
 }
 
-/** When true, Workers may call Google Translate (homepage warm / miss fill). */
-let liveTranslateAllowed = false;
+/** When > 0, Workers may call Google Translate (homepage warm / detail miss fill). */
+let liveTranslateDepth = 0;
 
 export async function withLiveTranslate<T>(fn: () => Promise<T>): Promise<T> {
-  liveTranslateAllowed = true;
+  liveTranslateDepth += 1;
   try {
     return await fn();
   } finally {
-    liveTranslateAllowed = false;
+    liveTranslateDepth = Math.max(0, liveTranslateDepth - 1);
   }
 }
 
@@ -38,13 +38,16 @@ export function looksEnglish(text: string) {
   return /^[\x00-\x7F]+$/.test(t) && /[A-Za-z]{3,}/.test(t) && /\s/.test(t);
 }
 
-async function translateViaGoogle(text: string): Promise<string | null> {
+const TRANSLATE_CHUNK = 1400;
+
+async function translateChunkViaGoogle(text: string): Promise<string | null> {
+  // Default target is always Indonesian (Bahasa). Auto-detect source so EN/TL/etc. all land in ID.
   const url =
-    "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=id&dt=t&q=" +
+    "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=id&dt=t&q=" +
     encodeURIComponent(text);
   const res = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 AuraDracin/1.0" },
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) return null;
   const data = (await res.json()) as unknown;
@@ -54,6 +57,39 @@ async function translateViaGoogle(text: string): Promise<string | null> {
     .join("")
     .trim();
   return out || null;
+}
+
+/** Split long synopsis/paragraphs so the free Translate endpoint stays under URL limits. */
+function splitForTranslate(text: string): string[] {
+  if (text.length <= TRANSLATE_CHUNK) return [text];
+  const parts: string[] = [];
+  let rest = text;
+  while (rest.length > TRANSLATE_CHUNK) {
+    const window = rest.slice(0, TRANSLATE_CHUNK);
+    const breakAt = Math.max(
+      window.lastIndexOf("\n"),
+      window.lastIndexOf(". "),
+      window.lastIndexOf("! "),
+      window.lastIndexOf("? "),
+      window.lastIndexOf(" "),
+    );
+    const cut = breakAt > TRANSLATE_CHUNK * 0.4 ? breakAt + 1 : TRANSLATE_CHUNK;
+    parts.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) parts.push(rest);
+  return parts.filter(Boolean);
+}
+
+async function translateViaGoogle(text: string): Promise<string | null> {
+  const chunks = splitForTranslate(text);
+  const out: string[] = [];
+  for (const chunk of chunks) {
+    const translated = await translateChunkViaGoogle(chunk);
+    if (!translated) return null;
+    out.push(translated);
+  }
+  return out.join(" ").trim() || null;
 }
 
 function isUsefulTranslation(source: string, translated: string) {
@@ -79,7 +115,7 @@ export async function translateToBahasa(text: string): Promise<string> {
   }
 
   // Request path on Workers: serve D1 only unless warm/miss-fill enabled.
-  if (process.env.CLOUDFLARE_WORKERS === "1" && !liveTranslateAllowed) {
+  if (process.env.CLOUDFLARE_WORKERS === "1" && liveTranslateDepth === 0) {
     return source;
   }
 
@@ -113,7 +149,7 @@ export async function translateManyToBahasa(texts: string[]): Promise<string[]> 
       const [index, text] = next;
       out[index] = await translateToBahasa(text);
       // Small pause between calls during warm fills.
-      if (liveTranslateAllowed) {
+      if (liveTranslateDepth > 0) {
         await new Promise((r) => setTimeout(r, 80));
       }
     }
