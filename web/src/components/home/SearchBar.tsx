@@ -12,7 +12,7 @@ export function SearchBar() {
   function submit(next: string) {
     const value = next.trim();
     startTransition(() => {
-      router.push(value ? `/?q=${encodeURIComponent(value)}` : "/");
+      router.push(value ? `/cari?q=${encodeURIComponent(value)}` : "/cari");
     });
   }
 

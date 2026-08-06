@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { fmtNum } from "@/lib/constants";
@@ -38,12 +39,20 @@ export function FeaturedSlider({ items }: { items: DramaCard[] }) {
           style={{ opacity: i === index ? 1 : 0, pointerEvents: i === index ? "auto" : "none" }}
           aria-hidden={i !== index}
         >
-          <img
-            src={slide.cover}
-            alt={slide.title}
-            className="h-full w-full object-cover"
-            referrerPolicy="no-referrer"
-          />
+          {slide.cover ? (
+            <Image
+              src={slide.cover}
+              alt={slide.title}
+              fill
+              sizes="100vw"
+              className="object-cover"
+              priority={i === 0}
+              loading={i === 0 ? undefined : "lazy"}
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="h-full w-full bg-[var(--color-neutral-900)]" />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-neutral-900)] via-[var(--color-neutral-900)]/35 to-transparent" />
         </div>
       ))}

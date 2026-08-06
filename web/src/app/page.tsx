@@ -3,154 +3,48 @@ import { Suspense } from "react";
 import { FeaturedSlider } from "@/components/home/FeaturedSlider";
 import { HorizontalRail } from "@/components/home/HorizontalRail";
 import { SearchBar } from "@/components/home/SearchBar";
+import { CityPopularRail } from "@/components/home/CityPopularRail";
 import { VideoCard } from "@/components/video/VideoCard";
 import { CATEGORIES } from "@/lib/constants";
-import {
-  FEATURED_STUDIO_PROVIDERS,
-  PLAYABLE_PROVIDERS,
-  buildFeaturedSlides,
-  getHomepageCatalog,
-  getProviderRail,
-  searchCatalog,
-} from "@/lib/dramabos";
-import { auth } from "@/lib/auth";
+import { getHomeSnapshot } from "@/lib/home-cache";
 import { providerDisplayName, providerSubtitle } from "@/lib/studios";
-import { listCityPopularDramaRefs, mergeLocalLikes } from "@/lib/videos";
 
-export const dynamic = "force-dynamic";
+/** ISR-friendly homepage — search lives on /cari so this route can be cached. */
+export const revalidate = 120;
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string }>;
-}) {
-  const { q } = await searchParams;
-  const session = await auth();
-  const city = session?.user?.city || "Jakarta";
-  const query = q?.trim() || "";
-
-  // Search mode: skip homepage rails / multi-provider catalog work.
-  if (query) {
-    const started = Date.now();
-    const results = await mergeLocalLikes(await searchCatalog(query, 72));
-    const ms = Date.now() - started;
-
-    return (
-      <div className="pb-24">
-        <Suspense fallback={null}>
-          <SearchBar />
-        </Suspense>
-
-        <section className="border-b-2 border-[var(--color-divider)] px-4 py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="m-0 text-[19px]">Hasil untuk “{query}”</h2>
-              <p className="text-muted m-0 mt-1 text-xs">
-                {results.length
-                  ? `${results.length} drama cocok · ${Math.max(1, Math.round(ms / 100) / 10)} dtk`
-                  : "Tidak ada hasil. Coba kata lain seperti CEO, balas dendam, atau fantasi."}
-              </p>
-            </div>
-            <Link href="/" className="btn shrink-0 text-[13px]">
-              Reset
-            </Link>
-          </div>
-        </section>
-
-        {results.length ? (
-          <div className="grid grid-cols-2 gap-3 px-4 py-4">
-            {results.map((item) => (
-              <VideoCard
-                key={`search-${item.source}-${item.provider}-${item.id}`}
-                item={item}
-                widthClass="w-full"
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="px-4 py-8">
-            <p className="text-muted m-0 text-sm">Saran pencarian cepat:</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {["CEO", "balas dendam", "cinta", "fantasi", "kontrak nikah", "baby"].map((hint) => (
-                <Link
-                  key={hint}
-                  href={`/?q=${encodeURIComponent(hint)}`}
-                  className="border border-[var(--color-divider)] px-3 py-1.5 text-[13px] text-[var(--color-text)]"
-                >
-                  {hint}
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+function RailSkeleton({ title }: { title: string }) {
+  return (
+    <section className="border-t-2 border-[var(--color-divider)] py-5">
+      <div className="px-4 pb-3">
+        <h3 className="text-[19px]">{title}</h3>
+        <div className="text-muted mt-1 h-3 w-40 animate-pulse bg-[var(--color-divider)]" />
       </div>
-    );
-  }
+      <div className="flex gap-3 overflow-hidden px-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-[220px] w-[150px] shrink-0 animate-pulse bg-[var(--color-divider)]"
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
-  // Featured studios first; remaining playable providers fill extra rails.
-  // On Workers, only featured studios + a short catalog to stay under CPU/wall limits.
-  const homepageProviders =
-    process.env.CLOUDFLARE_WORKERS === "1"
-      ? [...FEATURED_STUDIO_PROVIDERS]
-      : [...PLAYABLE_PROVIDERS];
-
-  const [catalogRaw, ...providerBatches] = await Promise.all([
-    getHomepageCatalog(process.env.CLOUDFLARE_WORKERS === "1" ? 80 : 240),
-    ...homepageProviders.map(async (provider) => {
-      const items = await getProviderRail(provider, 25).catch(() => []);
-      return { provider, items: await mergeLocalLikes(items) };
-    }),
-  ]);
-
-  const catalog = await mergeLocalLikes(catalogRaw);
-  const trending = catalog;
-  const latest = (
-    await mergeLocalLikes(providerBatches.flatMap((batch) => batch.items))
-  ).slice(0, 36);
-
-  // ReelShort / GoodShort first, then remaining live studio rails.
-  const featuredSet = new Set<string>(FEATURED_STUDIO_PROVIDERS);
-  const orderedBatches = [
-    ...FEATURED_STUDIO_PROVIDERS.map((provider) =>
-      providerBatches.find((batch) => batch.provider === provider),
-    ),
-    ...providerBatches.filter((batch) => !featuredSet.has(batch.provider)),
-  ].filter(Boolean) as typeof providerBatches;
-
-  const providerRails = orderedBatches
-    .map((batch) => ({
-      provider: batch.provider,
-      items: batch.items.slice(0, 25),
-    }))
-    .filter((rail) => rail.items.length > 0);
-
-  const featuredSlides = await mergeLocalLikes(await buildFeaturedSlides(catalog, 5));
-
-  const cityRefs = await listCityPopularDramaRefs(city, 12);
-  const cityItems =
-    cityRefs.length > 0
-      ? cityRefs
-          .map((ref) =>
-            catalog.find((c) => c.provider === ref.provider && c.id === ref.id),
-          )
-          .filter(Boolean)
-      : trending.slice(8, 20);
+async function HomeCatalog() {
+  const snap = await getHomeSnapshot();
 
   return (
-    <div className="pb-24">
-      <Suspense fallback={null}>
-        <SearchBar />
-      </Suspense>
-
-      {featuredSlides.length ? <FeaturedSlider items={featuredSlides} /> : null}
+    <>
+      {snap.featuredSlides.length ? <FeaturedSlider items={snap.featuredSlides} /> : null}
 
       <HorizontalRail
         title="🔥 Lagi Populer"
         subtitle="Kumpulan Drama terpopuler di AuraDracin"
-        items={trending.slice(0, 60)}
+        items={snap.trending}
       />
 
-      {providerRails.map((rail) => (
+      {snap.providerRails.map((rail) => (
         <HorizontalRail
           key={rail.provider}
           title={providerDisplayName(rail.provider)}
@@ -166,7 +60,7 @@ export default async function HomePage({
           <p className="text-muted m-0 text-xs">Terbaru di AuraDracin</p>
         </div>
         <div className="grid grid-cols-2 gap-3 px-4 pt-3.5">
-          {latest.slice(0, 12).map((item) => (
+          {snap.latest.slice(0, 12).map((item) => (
             <VideoCard
               key={`grid-${item.source}-${item.provider}-${item.id}`}
               item={item}
@@ -175,6 +69,20 @@ export default async function HomePage({
           ))}
         </div>
       </section>
+    </>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <div className="pb-24">
+      <Suspense fallback={null}>
+        <SearchBar />
+      </Suspense>
+
+      <Suspense fallback={<RailSkeleton title="Unggulan & Populer" />}>
+        <HomeCatalog />
+      </Suspense>
 
       <section className="border-t-2 border-[var(--color-divider)] py-5">
         <h3 className="mb-3 px-4 text-[19px]">📂 Kategori Cerita</h3>
@@ -192,11 +100,9 @@ export default async function HomePage({
         </div>
       </section>
 
-      <HorizontalRail
-        title={`📍 Lagi Rame di ${city}`}
-        subtitle={`Yang lagi banyak ditonton di ${city}`}
-        items={(cityItems as typeof trending).slice(0, 12)}
-      />
+      <Suspense fallback={<RailSkeleton title="📍 Lagi Rame di kotamu" />}>
+        <CityPopularRail />
+      </Suspense>
 
       <footer className="flex flex-col gap-2.5 border-t-2 border-[var(--color-divider)] px-4 py-7 text-[13px]">
         <Link href="/tentang">Tentang Aura Dracin</Link>

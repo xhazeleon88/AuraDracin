@@ -4,6 +4,11 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-07-30",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "preview_urls": true,
+  "placement": {
+    "mode": "smart"
+  },
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -19,7 +24,7 @@
   },
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 1
+    "head_sampling_rate": 0.2
   },
   "vars": {
     "CLOUDFLARE_WORKERS": "1",
@@ -27,8 +32,19 @@
     "DRAMABOS_BASE_URL": "https://api.dramabuzz.sbs",
     "DRAMABOS_DEFAULT_PROVIDER": "reelshort",
     "DRAMABOS_LANG": "id",
-    "ADMIN_EMAIL": "admin@auradracin.com"
+    "ADMIN_EMAIL": "admin@auradracin.com",
+    "HOME_CACHE_TTL_SEC": "120"
   },
+  "kv_namespaces": [
+    {
+      "binding": "AURA_CACHE",
+      "id": "996c7c9ae8a24a2c993f32361a78c3a9"
+    },
+    {
+      "binding": "NEXT_INC_CACHE_KV",
+      "id": "a4dcac053ebc4fb5b5bb6b38f447b8ce"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",

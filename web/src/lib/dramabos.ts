@@ -167,7 +167,8 @@ async function fetchJson(
   opts?: { timeoutMs?: number; revalidate?: number | false },
 ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
   try {
-    const timeoutMs = opts?.timeoutMs ?? 12_000;
+    const onWorkers = process.env.CLOUDFLARE_WORKERS === "1";
+    const timeoutMs = opts?.timeoutMs ?? (onWorkers ? 6_000 : 12_000);
     const res = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 AuraDracin/1.0",
@@ -541,6 +542,20 @@ async function localizeDetail(detail: DramaDetail): Promise<DramaDetail> {
 
 /** Provider Status API */
 export async function getProviderStatus(): Promise<DramabosStatus> {
+  // DramaBuzz gateway often 403s from Cloudflare egress — skip on Workers.
+  if (process.env.CLOUDFLARE_WORKERS === "1") {
+    return {
+      mode: "live",
+      reason: "workers-skip-gateway",
+      provider: DEFAULT_PROVIDER,
+      platforms: PLAYABLE_PROVIDERS.map((id) => ({
+        id,
+        name: id,
+        status: "active",
+      })),
+    };
+  }
+
   const key = accessCode();
   if (!key) {
     return {
@@ -550,7 +565,10 @@ export async function getProviderStatus(): Promise<DramabosStatus> {
     };
   }
 
-  const res = await fetchJson(`${GATEWAY}/api/status?key=${encodeURIComponent(key)}`);
+  const res = await fetchJson(`${GATEWAY}/api/status?key=${encodeURIComponent(key)}`, {
+    timeoutMs: 5_000,
+    revalidate: 300,
+  });
   if (!res.ok || !res.data || typeof res.data !== "object") {
     return {
       mode: "demo",
@@ -727,19 +745,15 @@ export async function getLatest(provider = DEFAULT_PROVIDER, page = 1): Promise<
 export async function getProviderRail(provider: string, limit = 25): Promise<DramaCard[]> {
   const featured = (FEATURED_STUDIO_PROVIDERS as readonly string[]).includes(provider);
   const onWorkers = process.env.CLOUDFLARE_WORKERS === "1";
-  // Workers has a tight subrequest budget — keep featured rails to 1 page + few searches.
+  // Workers: only trending + latest (2 subrequests). Local/dev can fill harder.
   const aggressive = !onWorkers && (featured || limit > 25);
 
   if (!aggressive) {
-    const jobs: Promise<DramaCard[]>[] = [
+    const [trend, latest] = await Promise.all([
       getTrending(provider, 1).catch(() => [] as DramaCard[]),
       getLatest(provider, 1).catch(() => [] as DramaCard[]),
-    ];
-    if (onWorkers && featured) {
-      jobs.push(searchDramas("love", provider).catch(() => [] as DramaCard[]));
-    }
-    const batches = await Promise.all(jobs);
-    return dedupe(batches.flat()).slice(0, Math.max(1, limit));
+    ]);
+    return dedupe([...trend, ...latest]).slice(0, Math.max(1, limit));
   }
 
   const pages = featured ? [1, 2, 3] : [1, 2];
@@ -770,23 +784,35 @@ function interleaveBatches(batches: DramaCard[][]): DramaCard[] {
 
 /** Pull as many live titles as possible from every working provider. */
 export async function getHomepageCatalog(limit = 120): Promise<DramaCard[]> {
+  const onWorkers = process.env.CLOUDFLARE_WORKERS === "1";
+  // On Workers, skip gateway status and only hit featured studio feeds (2 calls each).
+  if (onWorkers) {
+    const batches = await Promise.all(
+      FEATURED_STUDIO_PROVIDERS.map(async (provider) => {
+        const [trend, latest] = await Promise.all([
+          getTrending(provider, 1).catch(() => [] as DramaCard[]),
+          getLatest(provider, 1).catch(() => [] as DramaCard[]),
+        ]);
+        return dedupe([...trend, ...latest]);
+      }),
+    );
+    return interleaveBatches(batches).slice(0, limit);
+  }
+
   const status = await getProviderStatus();
   const liveIds = new Set(
     (status.platforms || [])
       .filter((p) => p.status === "active" || p.status === "maintenance")
       .map((p) => p.id.toLowerCase()),
   );
-  const providerPool =
-    process.env.CLOUDFLARE_WORKERS === "1" ? FEATURED_STUDIO_PROVIDERS : PLAYABLE_PROVIDERS;
-  const providers = providerPool.filter(
+  const providers = PLAYABLE_PROVIDERS.filter(
     (id) =>
       liveIds.size === 0 ||
       liveIds.has(id) ||
       (PLAYABLE_PROVIDERS as readonly string[]).includes(id),
   );
 
-  const queries =
-    process.env.CLOUDFLARE_WORKERS === "1" ? ["love", "ceo"] : ["love", "ceo", "revenge", "baby"];
+  const queries = ["love", "ceo", "revenge", "baby"];
 
   const batches = await Promise.all(
     providers.map(async (provider) => {

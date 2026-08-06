@@ -5,6 +5,18 @@ function hashKey(text: string) {
   return createHash("sha256").update(text.trim().toLowerCase()).digest("hex").slice(0, 32);
 }
 
+/** When true, Workers may call Google Translate (used by homepage warm only). */
+let liveTranslateAllowed = false;
+
+export async function withLiveTranslate<T>(fn: () => Promise<T>): Promise<T> {
+  liveTranslateAllowed = true;
+  try {
+    return await fn();
+  } finally {
+    liveTranslateAllowed = false;
+  }
+}
+
 /** Heuristic: skip titles that already look Indonesian. */
 export function looksEnglish(text: string) {
   const t = text.trim();
@@ -19,7 +31,6 @@ export function looksEnglish(text: string) {
   if (/\b(the|and|of|to|you|your|love|my|her|his|been|from|with|for|baby|king|queen|alpha|luna|cowboy|genie|wolf)\b/i.test(t)) {
     return true;
   }
-  // Latin-only titles from EN catalogs
   return /^[\x00-\x7F]+$/.test(t) && /[A-Za-z]{3,}/.test(t) && /\s/.test(t);
 }
 
@@ -29,7 +40,7 @@ async function translateViaGoogle(text: string): Promise<string | null> {
     encodeURIComponent(text);
   const res = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 AuraDracin/1.0" },
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) return null;
   const data = (await res.json()) as unknown;
@@ -51,8 +62,8 @@ export async function translateToBahasa(text: string): Promise<string> {
   );
   if (cached?.translated) return cached.translated;
 
-  // Skip live Google fan-out on Workers (subrequest/CPU budget); use English until cached.
-  if (process.env.CLOUDFLARE_WORKERS === "1") {
+  // Request path on Workers: D1 cache only. Warm jobs may enable live translate.
+  if (process.env.CLOUDFLARE_WORKERS === "1" && !liveTranslateAllowed) {
     return source;
   }
 
@@ -73,9 +84,8 @@ export async function translateToBahasa(text: string): Promise<string> {
 
 export async function translateManyToBahasa(texts: string[]): Promise<string[]> {
   const out: string[] = [];
-  // Small concurrency to stay polite with the free endpoint
   const queue = [...texts.entries()];
-  const workers = Array.from({ length: Math.min(4, queue.length || 1) }, async () => {
+  const workers = Array.from({ length: Math.min(3, queue.length || 1) }, async () => {
     while (queue.length) {
       const next = queue.shift();
       if (!next) break;

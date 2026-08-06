@@ -23,7 +23,7 @@ export function AppHeader() {
         </span>
       </Link>
       <div className="ml-auto flex items-center gap-2">
-        <Link href="/?q=" className="icon-btn" aria-label="Cari">
+        <Link href="/cari" className="icon-btn" aria-label="Cari">
           <i className="fa-solid fa-magnifying-glass text-[17px]" />
         </Link>
         {user ? (

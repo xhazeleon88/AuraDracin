@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EngagementRail } from "@/components/video/Engagement";
-import { HlsPlayer } from "@/components/video/HlsPlayer";
+import { LazyHlsPlayer as HlsPlayer } from "@/components/video/LazyHlsPlayer";
 import { auth } from "@/lib/auth";
 import { fmtNum } from "@/lib/constants";
 import { dbFirst, subtitlesGenerationEnabled } from "@/lib/db";

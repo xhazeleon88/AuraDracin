@@ -26,20 +26,43 @@ declare global {
     fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   }
 
+  interface KVNamespace {
+    get(key: string, type?: "text"): Promise<string | null>;
+    get(key: string, type: "json"): Promise<unknown>;
+    get(key: string, type: "arrayBuffer"): Promise<ArrayBuffer | null>;
+    get(key: string, type: "stream"): Promise<ReadableStream | null>;
+    put(
+      key: string,
+      value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+      options?: { expirationTtl?: number; expiration?: number; metadata?: unknown },
+    ): Promise<void>;
+    delete(key: string): Promise<void>;
+  }
+
+  // Minimal stub — OpenNext DO queue owns the real type.
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  interface DurableObjectNamespace {}
+
   interface CloudflareEnv {
     DB: D1Database;
+    AURA_CACHE: KVNamespace;
+    NEXT_INC_CACHE_KV: KVNamespace;
     ASSETS: Fetcher;
     WORKER_SELF_REFERENCE: Fetcher;
+    NEXT_CACHE_DO_QUEUE?: DurableObjectNamespace;
     CLOUDFLARE_WORKERS?: string;
     SUBTITLES_MODE?: string;
     DRAMABOS_BASE_URL?: string;
     DRAMABOS_DEFAULT_PROVIDER?: string;
     DRAMABOS_LANG?: string;
     ADMIN_EMAIL?: string;
+    HOME_CACHE_TTL_SEC?: string;
     AUTH_SECRET?: string;
     AUTH_URL?: string;
     DRAMABOS_API_KEY?: string;
     ADMIN_PASSWORD?: string;
+    ADMIN_PASSWORD_HASH?: string;
+    CRON_SECRET?: string;
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;
   }
