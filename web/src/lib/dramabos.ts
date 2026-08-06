@@ -566,15 +566,33 @@ const TITLE_STOP = new Set([
   "sub",
 ]);
 
-function titleFingerprint(title: string) {
-  const tokens = title
-    .toLowerCase()
-    .replace(/\((dubbed|subbed|dub|sub)\)/gi, " ")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .split(/\s+/)
-    .map((t) => TITLE_SYNONYMS[t] || t)
-    .filter((t) => t.length > 1 && !TITLE_STOP.has(t));
-  return [...new Set(tokens)].sort().join(" ");
+function titleTokens(title: string) {
+  return new Set(
+    title
+      .toLowerCase()
+      .replace(/\((dubbed|subbed|dub|sub)\)/gi, " ")
+      .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+      .split(/\s+/)
+      .map((t) => TITLE_SYNONYMS[t] || t)
+      .filter((t) => t.length > 1 && !TITLE_STOP.has(t)),
+  );
+}
+
+function titlesLookSame(a: string, b: string) {
+  const A = titleTokens(a);
+  const B = titleTokens(b);
+  if (A.size < 3 || B.size < 3) return false;
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter += 1;
+  if (inter < 3) return false;
+  const union = A.size + B.size - inter;
+  const jaccard = inter / union;
+  const smaller = A.size <= B.size ? A : B;
+  const larger = A.size <= B.size ? B : A;
+  let contained = 0;
+  for (const t of smaller) if (larger.has(t)) contained += 1;
+  const containment = contained / smaller.size;
+  return jaccard >= 0.55 || containment >= 0.8;
 }
 
 function titleLocaleScore(title: string) {
@@ -610,25 +628,16 @@ function preferLocaleCard(a: DramaCard, b: DramaCard) {
   return a;
 }
 
-function mergeIntoBucket(
-  out: DramaCard[],
-  indexByKey: Map<string, number>,
-  key: string,
-  card: DramaCard,
-) {
-  if (indexByKey.has(key)) {
-    const idx = indexByKey.get(key)!;
-    out[idx] = preferLocaleCard(out[idx], card);
-    return true;
+function episodeCompatible(a?: number, b?: number) {
+  if (typeof a === "number" && typeof b === "number" && a > 0 && b > 0) {
+    return a === b;
   }
-  indexByKey.set(key, out.length);
-  out.push(card);
-  return false;
+  return true;
 }
 
 /**
  * Collapse exact id dupes, then same-provider locale variants that share cover
- * art or a translated title fingerprint (e.g. DramaWave EN / ID / Tagalog).
+ * art or a near-matching translated title (e.g. DramaWave EN / ID / Tagalog).
  */
 function dedupe(cards: DramaCard[]) {
   const byId = new Map<string, DramaCard>();
@@ -639,45 +648,31 @@ function dedupe(cards: DramaCard[]) {
 
   const out: DramaCard[] = [];
   const coverIndex = new Map<string, number>();
-  const titleIndex = new Map<string, number>();
 
   for (const card of byId.values()) {
     const coverKey = card.cover
       ? `${card.provider}:cover:${normalizeCoverKey(card.cover)}`
       : "";
-    if (coverKey && mergeIntoBucket(out, coverIndex, coverKey, card)) {
-      const fp = titleFingerprint(card.title);
-      if (fp) titleIndex.set(`${card.provider}:title:${fp}`, coverIndex.get(coverKey)!);
+    if (coverKey && coverIndex.has(coverKey)) {
+      const idx = coverIndex.get(coverKey)!;
+      out[idx] = preferLocaleCard(out[idx], card);
       continue;
     }
 
-    const fp = titleFingerprint(card.title);
-    const titleKey =
-      fp.length >= 8 ? `${card.provider}:title:${fp}` : "";
-    // Prefer matching title fingerprints even when covers differ (localized posters).
-    // Require episodeCount agreement when both sides have it.
-    if (titleKey && titleIndex.has(titleKey)) {
-      const idx = titleIndex.get(titleKey)!;
-      const existing = out[idx];
-      const epsA = existing.episodeCount;
-      const epsB = card.episodeCount;
-      if (
-        typeof epsA === "number" &&
-        typeof epsB === "number" &&
-        epsA > 0 &&
-        epsB > 0 &&
-        epsA !== epsB
-      ) {
-        // Different episode counts → treat as different shows.
-      } else {
-        out[idx] = preferLocaleCard(existing, card);
-        if (coverKey) coverIndex.set(coverKey, idx);
-        continue;
-      }
+    let merged = false;
+    for (let i = 0; i < out.length; i += 1) {
+      const existing = out[i];
+      if (existing.provider !== card.provider) continue;
+      if (!episodeCompatible(existing.episodeCount, card.episodeCount)) continue;
+      if (!titlesLookSame(existing.title, card.title)) continue;
+      out[i] = preferLocaleCard(existing, card);
+      if (coverKey) coverIndex.set(coverKey, i);
+      merged = true;
+      break;
     }
+    if (merged) continue;
 
     if (coverKey) coverIndex.set(coverKey, out.length);
-    if (titleKey) titleIndex.set(titleKey, out.length);
     out.push(card);
   }
   return out;
