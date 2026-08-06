@@ -35,7 +35,11 @@ function parseVttTime(raw: string) {
 }
 
 function parseVtt(text: string): Cue[] {
-  const body = text.replace(/^\uFEFF?WEBVTT[^\n]*\n/, "");
+  const normalized =
+    text.includes("\\n") && text.split("\n").length < 3
+      ? text.replace(/\\n/g, "\n").replace(/\\"/g, '"')
+      : text;
+  const body = normalized.replace(/^\uFEFF?WEBVTT[^\n]*\n/, "");
   const blocks = body.split(/\n\s*\n/);
   const cues: Cue[] = [];
 

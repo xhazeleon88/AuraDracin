@@ -63,7 +63,18 @@ function toVttTime(seconds: number) {
 type WhisperSegment = { start: number; end: number; text: string };
 
 function isReadyVtt(vtt: string) {
-  return vtt.startsWith("WEBVTT") && /\d{2}:\d{2}:\d{2}\.\d{3}\s+-->/.test(vtt);
+  const normalized = normalizeVtt(vtt);
+  return normalized.startsWith("WEBVTT") && /\d{2}:\d{2}:\d{2}\.\d{3}\s+-->/.test(normalized);
+}
+
+/** Repair rows accidentally stored with literal \\n escape sequences. */
+function normalizeVtt(vtt: string) {
+  const raw = vtt.trim();
+  if (!raw) return raw;
+  if (raw.includes("\\n") && raw.split("\n").length < 3) {
+    return raw.replace(/\\n/g, "\n").replace(/\\"/g, '"');
+  }
+  return vtt;
 }
 
 /**
@@ -373,7 +384,16 @@ export async function getBahasaSubtitles(opts: {
   );
   // Serve successful caches. status=error rows fall through and retry.
   if (cached?.status === "ready" && isReadyVtt(cached.vtt)) {
-    return { vtt: cached.vtt, cached: true, status: "ready" };
+    const vtt = normalizeVtt(cached.vtt);
+    // Heal escaped rows so future reads are clean.
+    if (vtt !== cached.vtt) {
+      void dbRun(
+        `UPDATE subtitle_cache SET vtt = ?, updated_at = datetime('now') WHERE id = ?`,
+        vtt,
+        id,
+      );
+    }
+    return { vtt, cached: true, status: "ready" };
   }
 
   const existing = inflight.get(id);

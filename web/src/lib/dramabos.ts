@@ -2190,7 +2190,36 @@ function streamFromUrl(
 }
 
 /** Streaming API + Download/CDN API */
+/** Streaming / Play API */
 export async function getStream(
+  provider: string,
+  id: string,
+  ep = 1,
+): Promise<StreamResult | null> {
+  const cacheKey = `drama:stream:v1:${provider}:${id}:${ep}`;
+  try {
+    const env = await getCloudflareEnv();
+    const cached = await env?.AURA_CACHE?.get(cacheKey, "json");
+    if (cached && typeof cached === "object" && (cached as StreamResult).url) {
+      return cached as StreamResult;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const stream = await fetchStreamUncached(provider, id, ep);
+  if (stream?.url) {
+    try {
+      const env = await getCloudflareEnv();
+      await env?.AURA_CACHE?.put(cacheKey, JSON.stringify(stream), { expirationTtl: 120 });
+    } catch {
+      /* ignore */
+    }
+  }
+  return stream;
+}
+
+async function fetchStreamUncached(
   provider: string,
   id: string,
   ep = 1,
