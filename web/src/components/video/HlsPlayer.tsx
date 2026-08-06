@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Cue = { start: number; end: number; text: string };
 
@@ -79,9 +79,6 @@ export function HlsPlayer({
   const ref = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState("");
   const [advancing, setAdvancing] = useState(false);
-  const [subsOn, setSubsOn] = useState(true);
-  const [subsLoading, setSubsLoading] = useState(false);
-  const [subsError, setSubsError] = useState("");
   const [cues, setCues] = useState<Cue[]>([]);
   const [activeText, setActiveText] = useState("");
   const playable = toPlayableSrc(src, type);
@@ -277,10 +274,6 @@ export function HlsPlayer({
 
     const sync = () => {
       if (!alive) return;
-      if (!subsOn) {
-        setActiveText("");
-        return;
-      }
       setActiveText(pickCue((video.currentTime || 0) + OFFSET));
     };
 
@@ -317,13 +310,7 @@ export function HlsPlayer({
       video.removeEventListener("seeked", sync);
       video.removeEventListener("timeupdate", sync);
     };
-  }, [cues, hasSubs, subsOn, src]);
-
-  const statusLabel = useMemo(() => {
-    if (subsLoading) return "Subtitle…";
-    if (!hasSubs && subsError) return "Subtitle ✕";
-    return subsOn ? "Subtitle ON" : "Subtitle OFF";
-  }, [subsLoading, hasSubs, subsError, subsOn]);
+  }, [cues, hasSubs, src]);
 
   if (isImage) {
     return (
@@ -347,28 +334,12 @@ export function HlsPlayer({
         poster={poster}
       />
 
-      {subsOn && activeText ? (
+      {activeText ? (
         <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[96px] z-30 flex justify-center px-4">
           <div className="max-w-[92%] whitespace-pre-line rounded bg-black/80 px-3 py-1.5 text-center text-[14px] font-semibold leading-snug text-white shadow-sm">
             {activeText}
           </div>
         </div>
-      ) : null}
-
-      {subtitleUrl ? (
-        <button
-          type="button"
-          className={`absolute right-2 top-2 z-30 border px-2.5 py-1 text-[11px] font-bold ${
-            subsOn && hasSubs
-              ? "border-white bg-black/70 text-white"
-              : "border-white/40 bg-black/40 text-white/70"
-          }`}
-          onClick={() => setSubsOn((v) => !v)}
-          aria-pressed={subsOn}
-          title={subsError || undefined}
-        >
-          {statusLabel}
-        </button>
       ) : null}
 
       {advancing ? (
