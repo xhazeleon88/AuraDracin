@@ -10,6 +10,17 @@ export type CloudflareBindings = {
   IMAGES?: {
     input: (stream: ReadableStream | ArrayBuffer | Uint8Array) => unknown;
   };
+  AI?: {
+    run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
+  };
+  MEDIA?: {
+    input: (stream: ReadableStream | ArrayBuffer | Uint8Array) => {
+      transform: (opts?: Record<string, unknown>) => {
+        output: (opts: Record<string, unknown>) => { response: () => Promise<Response> };
+      };
+      output: (opts: Record<string, unknown>) => { response: () => Promise<Response> };
+    };
+  };
 };
 
 export async function getCloudflareEnv(): Promise<CloudflareBindings | null> {

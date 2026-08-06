@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 
 type Cue = { start: number; end: number; text: string };
 
+const SUBS_PREF_KEY = "aura-dracin-subs-bahasa";
+
 function toPlayableSrc(src: string, type: "hls" | "mp4") {
   if (!src) return src;
   if (src.startsWith("/") || src.startsWith("blob:") || src.startsWith("data:")) {
@@ -61,6 +63,13 @@ function parseVtt(text: string): Cue[] {
   return cues;
 }
 
+function readSubsPref(): boolean {
+  if (typeof window === "undefined") return true;
+  const raw = window.localStorage.getItem(SUBS_PREF_KEY);
+  if (raw === null) return true; // Default: Bahasa ON
+  return raw !== "0";
+}
+
 export function HlsPlayer({
   src,
   poster,
@@ -81,9 +90,15 @@ export function HlsPlayer({
   const [advancing, setAdvancing] = useState(false);
   const [cues, setCues] = useState<Cue[]>([]);
   const [activeText, setActiveText] = useState("");
+  const [subsOn, setSubsOn] = useState(true);
+  const [subsPending, setSubsPending] = useState(false);
   const playable = toPlayableSrc(src, type);
   const isImage = Boolean(src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i));
   const hasSubs = cues.length > 0;
+
+  useEffect(() => {
+    setSubsOn(readSubsPref());
+  }, []);
 
   useEffect(() => {
     setAdvancing(false);
@@ -118,6 +133,10 @@ export function HlsPlayer({
         const instance = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
+          // Prefer our Bahasa overlay — ignore embedded/English text tracks.
+          enableWebVTT: false,
+          enableIMSC1: false,
+          enableCEA708Captions: false,
           xhrSetup(xhr) {
             xhr.withCredentials = false;
           },
@@ -147,6 +166,15 @@ export function HlsPlayer({
         instance.attachMedia(video!);
         instance.on(Hls.Events.MANIFEST_PARSED, async () => {
           video!.muted = false;
+          // Disable any native tracks the browser might still expose.
+          try {
+            const tracks = video!.textTracks;
+            for (let i = 0; i < tracks.length; i++) {
+              tracks[i].mode = "disabled";
+            }
+          } catch {
+            /* ignore */
+          }
           try {
             await video!.play();
           } catch {
@@ -192,44 +220,83 @@ export function HlsPlayer({
     return () => video.removeEventListener("ended", onEnded);
   }, [nextHref, router, isImage, src]);
 
-  // Custom cue overlay — more reliable than native TextTrack with HLS.js.
+  // Custom Bahasa cue overlay — default ON. Poll while Workers AI generates.
   useEffect(() => {
     if (!subtitleUrl || isImage) {
       setCues([]);
       setActiveText("");
+      setSubsPending(false);
       return;
     }
 
     let cancelled = false;
+    let timer = 0;
     const controller = new AbortController();
     setCues([]);
     setActiveText("");
+    setSubsPending(true);
 
-    fetch(subtitleUrl, { signal: controller.signal })
-      .then(async (res) => {
-        const text = await res.text();
-        if (cancelled) return;
-        if (!text.includes("WEBVTT")) {
-          setCues([]);
-          return;
-        }
-        const parsed = parseVtt(text);
-        setCues(parsed);
-      })
-      .catch((err) => {
-        if (cancelled || err?.name === "AbortError") return;
+    async function loadOnce(): Promise<"ready" | "pending" | "empty"> {
+      const res = await fetch(subtitleUrl!, { signal: controller.signal });
+      const text = await res.text();
+      if (cancelled) return "empty";
+      if (!text.includes("WEBVTT")) {
         setCues([]);
-      });
+        return "empty";
+      }
+      const parsed = parseVtt(text);
+      if (parsed.length) {
+        setCues(parsed);
+        setSubsPending(false);
+        return "ready";
+      }
+      if (/sedang dibuat|sedang disiapkan|generating/i.test(text)) {
+        setSubsPending(true);
+        return "pending";
+      }
+      setSubsPending(false);
+      return "empty";
+    }
+
+    async function poll() {
+      try {
+        const state = await loadOnce();
+        if (cancelled || state === "ready" || state === "empty") return;
+        let attempts = 0;
+        const tick = async () => {
+          if (cancelled || attempts >= 45) {
+            setSubsPending(false);
+            return;
+          }
+          attempts += 1;
+          try {
+            const next = await loadOnce();
+            if (next === "ready" || next === "empty") return;
+          } catch {
+            /* keep polling */
+          }
+          timer = window.setTimeout(tick, 2000);
+        };
+        timer = window.setTimeout(tick, 2000);
+      } catch (err) {
+        if (cancelled || (err as { name?: string })?.name === "AbortError") return;
+        setCues([]);
+        setSubsPending(false);
+      }
+    }
+
+    void poll();
 
     return () => {
       cancelled = true;
       controller.abort();
+      if (timer) window.clearTimeout(timer);
     };
   }, [subtitleUrl, isImage, src]);
 
   useEffect(() => {
     const video = ref.current;
-    if (!video || !hasSubs) {
+    if (!video || !hasSubs || !subsOn) {
       setActiveText("");
       return;
     }
@@ -241,12 +308,10 @@ export function HlsPlayer({
     let alive = true;
 
     const pickCue = (t: number): string => {
-      // Active cue
       for (let i = 0; i < cues.length; i += 1) {
         const c = cues[i];
         if (t >= c.start && t < c.end) return c.text;
       }
-      // Hold previous line across tiny gaps so sync feels continuous
       for (let i = 0; i < cues.length - 1; i += 1) {
         const cur = cues[i];
         const next = cues[i + 1];
@@ -295,7 +360,19 @@ export function HlsPlayer({
       video.removeEventListener("seeked", sync);
       video.removeEventListener("timeupdate", sync);
     };
-  }, [cues, hasSubs, src]);
+  }, [cues, hasSubs, subsOn, src]);
+
+  function toggleSubs() {
+    setSubsOn((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(SUBS_PREF_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
 
   if (isImage) {
     return (
@@ -316,16 +393,30 @@ export function HlsPlayer({
         controls
         playsInline
         autoPlay
+        crossOrigin="anonymous"
         poster={poster}
       />
 
-      {activeText ? (
-        <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[96px] z-30 flex justify-center px-4">
-          <div className="max-w-[92%] whitespace-pre-line rounded bg-black/80 px-3 py-1.5 text-center text-[14px] font-semibold leading-snug text-white shadow-sm">
+      {/* Opaque Bahasa overlay sits over burned-in English hardsubs near the bottom. */}
+      {subsOn && activeText ? (
+        <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[88px] z-30 flex justify-center px-3">
+          <div className="max-w-[94%] whitespace-pre-line bg-black/92 px-3.5 py-2 text-center text-[15px] font-semibold leading-snug text-white shadow-[0_2px_12px_rgba(0,0,0,0.55)]">
             {activeText}
           </div>
         </div>
       ) : null}
+
+      <button
+        type="button"
+        onClick={toggleSubs}
+        className="absolute bottom-[52px] right-2 z-40 rounded border border-white/30 bg-black/70 px-2 py-1 text-[11px] font-bold tracking-wide text-white"
+        aria-pressed={subsOn}
+        aria-label={subsOn ? "Matikan subtitle Bahasa" : "Nyalakan subtitle Bahasa"}
+        title="Subtitle Bahasa"
+      >
+        {subsOn ? "ID ON" : "ID OFF"}
+        {subsPending && subsOn ? "…" : ""}
+      </button>
 
       {advancing ? (
         <div className="absolute inset-x-0 bottom-12 z-20 bg-black/75 px-3 py-2 text-center text-xs text-white">

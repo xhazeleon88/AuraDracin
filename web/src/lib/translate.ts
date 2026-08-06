@@ -21,6 +21,10 @@ export async function withLiveTranslate<T>(fn: () => Promise<T>): Promise<T> {
 export function looksEnglish(text: string) {
   const t = text.trim();
   if (!t) return false;
+  // Pure episode markers — never worth a Translate round-trip.
+  if (/^(episode|ep|eps|bab|bagian)\s*\d+$/i.test(t) || /^\d{1,4}$/.test(t)) {
+    return false;
+  }
   if (
     /\b(yang|dengan|dari|untuk|adalah|ternyata|sang|aku|dia|pada|seorang|cinta|bos|mantan|suami|istri|keluarga|rahasia|warisan|balas|dendam)\b/i.test(
       t,

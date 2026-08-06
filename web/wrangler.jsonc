@@ -25,13 +25,19 @@
   "images": {
     "binding": "IMAGES"
   },
+  "ai": {
+    "binding": "AI"
+  },
+  "media": {
+    "binding": "MEDIA"
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 0.2
   },
   "vars": {
     "CLOUDFLARE_WORKERS": "1",
-    "SUBTITLES_MODE": "cache-only",
+    "SUBTITLES_MODE": "workers-ai",
     "DRAMABOS_BASE_URL": "https://api.dramabuzz.sbs",
     "DRAMABOS_DEFAULT_PROVIDER": "reelshort",
     "DRAMABOS_LANG": "id",

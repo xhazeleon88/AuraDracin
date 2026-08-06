@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 const SESSION_KEY = "aura-dracin-install-dismissed";
+const DAY_KEY = "aura-dracin-install-dismissed-day";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -32,9 +33,20 @@ function isBotOrCrawler() {
   if (typeof navigator === "undefined") return true;
   if ((navigator as Navigator & { webdriver?: boolean }).webdriver) return true;
   const ua = navigator.userAgent || "";
-  return /bot|crawl|spider|slurp|facebookexternalhit|preview|lighthouse|pagespeed|gtmetrix|pingdom|headless|chrome-lighthouse|google-inspectiontool|bytespider|semrush|ahrefs|yandex|baidu|duckduck|bingpreview|twitterbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest|redditbot|applebot|petalbot|chatgpt|openai|anthropic|claude|gptbot|storebot|googleother/i.test(
+  return /bot|crawl|spider|slurp|facebookexternalhit|preview|lighthouse|pagespeed|gtmetrix|pingdom|headless|chrome-lighthouse|google-inspectiontool|bytespider|semrush|ahrefs|yandex|baidu|duckduck|bingpreview|twitterbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest|redditbot|applebot|petalbot|chatgpt|openai|anthropic|claude|gptbot|storebot|googleother|cursor/i.test(
     ua,
   );
+}
+
+function recentlyDismissed() {
+  try {
+    if (sessionStorage.getItem(SESSION_KEY) === "1") return true;
+    const day = localStorage.getItem(DAY_KEY);
+    if (!day) return false;
+    return Date.now() - Number(day) < 1000 * 60 * 60 * 24;
+  } catch {
+    return false;
+  }
 }
 
 export function InstallPrompt() {
@@ -45,25 +57,29 @@ export function InstallPrompt() {
   useEffect(() => {
     if (isBotOrCrawler()) return;
     if (isStandalone()) return;
-    if (sessionStorage.getItem(SESSION_KEY) === "1") return;
+    if (recentlyDismissed()) return;
 
     const onBip = (e: Event) => {
       e.preventDefault();
+      // Don't interrupt the first watch — wait until the user has been around a bit.
       setDeferred(e as BeforeInstallPromptEvent);
-      setOpen(true);
     };
     window.addEventListener("beforeinstallprompt", onBip);
 
-    // Only auto-show for iOS Safari (no BIP). Other browsers wait for BIP
-    // so Lighthouse / desktop sessions aren't interrupted by the modal.
     const t = window.setTimeout(() => {
-      if (sessionStorage.getItem(SESSION_KEY) === "1" || isStandalone()) return;
-      if (isBotOrCrawler()) return;
+      if (recentlyDismissed() || isStandalone() || isBotOrCrawler()) return;
+      // iOS Safari has no BIP — show a soft hint once/day after delay.
       if (isIosSafari()) {
         setIosHint(true);
         setOpen(true);
+        return;
       }
-    }, 1800);
+      // Other browsers: only open if BIP already fired AND user stayed ~8s.
+      setDeferred((current) => {
+        if (current) setOpen(true);
+        return current;
+      });
+    }, 8000);
 
     if ("serviceWorker" in navigator && !isBotOrCrawler()) {
       navigator.serviceWorker.register("/sw.js").catch(() => {
@@ -78,7 +94,12 @@ export function InstallPrompt() {
   }, []);
 
   function dismiss() {
-    sessionStorage.setItem(SESSION_KEY, "1");
+    try {
+      sessionStorage.setItem(SESSION_KEY, "1");
+      localStorage.setItem(DAY_KEY, String(Date.now()));
+    } catch {
+      /* ignore */
+    }
     setOpen(false);
   }
 

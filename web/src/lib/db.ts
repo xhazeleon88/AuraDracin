@@ -132,10 +132,11 @@ type LocalSqlite = {
 let localDb: LocalSqlite | null = null;
 let ready: Promise<AppDb> | null = null;
 
-/** ffmpeg/whisper cannot run on Workers — serve cache or a NOTE VTT. */
+/** ffmpeg/whisper cannot run on Workers — use Workers AI when available. */
 export function subtitlesGenerationEnabled() {
   if (process.env.SUBTITLES_MODE === "cache-only") return false;
   if (process.env.SUBTITLES_MODE === "generate") return true;
+  if (process.env.SUBTITLES_MODE === "workers-ai") return false;
   // Default: generate only when not on Cloudflare Workers runtime.
   return process.env.CLOUDFLARE_WORKERS !== "1";
 }

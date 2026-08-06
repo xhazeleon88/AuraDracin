@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CoverImage } from "@/components/video/CoverImage";
 import { EngagementRail } from "@/components/video/Engagement";
 import { LazyHlsPlayer as HlsPlayer } from "@/components/video/LazyHlsPlayer";
+import { RelatedDramas } from "@/components/video/RelatedDramas";
 import { auth } from "@/lib/auth";
+import { runInBackground } from "@/lib/cf";
 import { fmtNum } from "@/lib/constants";
-import { dbFirst, subtitlesGenerationEnabled } from "@/lib/db";
-import { getDramaDetail, getRelatedDramas, getStream } from "@/lib/dramabos";
+import { dbFirst } from "@/lib/db";
+import { getDramaDetail, getStream } from "@/lib/dramabos";
 import { enrichDramaEngagement } from "@/lib/engagement";
 import { getBahasaSubtitles } from "@/lib/subtitles";
 import { providerDisplayName } from "@/lib/studios";
-import { countLocalLikes, mergeLocalLikes, recordView } from "@/lib/videos";
+import { countLocalLikes, recordView } from "@/lib/videos";
 
 export const dynamic = "force-dynamic";
 
@@ -21,60 +22,61 @@ export default async function DramaWatchPage({
   params: Promise<{ provider: string; id: string }>;
   searchParams: Promise<{ ep?: string }>;
 }) {
-  const { provider, id } = await params;
-  const { ep } = await searchParams;
+  const [{ provider, id }, { ep }] = await Promise.all([params, searchParams]);
   const episode = Math.max(1, Number(ep || 1) || 1);
-  const session = await auth();
+  const dramaId = decodeURIComponent(id);
 
-  const rawDetail = await getDramaDetail(provider, decodeURIComponent(id));
+  // Auth + detail in parallel — don't serialize the session lookup.
+  const [session, rawDetail] = await Promise.all([
+    auth(),
+    getDramaDetail(provider, dramaId),
+  ]);
   if (!rawDetail) notFound();
   const detail = enrichDramaEngagement(rawDetail);
 
-  const [stream, relatedRaw] = await Promise.all([
-    getStream(provider, detail.id, episode),
-    getRelatedDramas({
-      provider,
-      id: detail.id,
-      category: detail.category,
-      limit: 5,
-    }).catch(() => []),
-  ]);
-  const related = await mergeLocalLikes(relatedRaw);
+  // Stream only on the critical path. Related titles load client-side after paint.
+  const stream = await getStream(provider, detail.id, episode);
 
   const nextEpisode = detail.episodes.find((item) => item.number === episode + 1);
   const nextHref = nextEpisode
     ? `/drama/${provider}/${encodeURIComponent(detail.id)}?ep=${nextEpisode.number}`
     : undefined;
   const subtitleUrl = stream?.url
-    ? `/api/subtitles?provider=${encodeURIComponent(provider)}&id=${encodeURIComponent(detail.id)}&ep=${episode}&v=3`
+    ? `/api/subtitles?provider=${encodeURIComponent(provider)}&id=${encodeURIComponent(detail.id)}&ep=${episode}&v=4`
     : undefined;
-  // Warm subtitle cache in the background so the player gets cues sooner.
-  if (stream?.url && subtitlesGenerationEnabled()) {
-    void getBahasaSubtitles({
-      provider,
-      dramaId: detail.id,
-      episode,
-      streamUrl: stream.url,
-    }).catch(() => undefined);
+
+  // Kick off Bahasa subtitle generation / cache warm without blocking HTML.
+  if (stream?.url) {
+    void runInBackground(() =>
+      getBahasaSubtitles({
+        provider,
+        dramaId: detail.id,
+        episode,
+        streamUrl: stream.url,
+      }),
+    );
   }
-  await recordView("dramabos", `${provider}:${detail.id}`, session?.user?.id, session?.user?.city);
+
+  void runInBackground(() =>
+    recordView("dramabos", `${provider}:${detail.id}`, session?.user?.id, session?.user?.city),
+  );
 
   const targetId = `${provider}:${detail.id}`;
-  const liked = session?.user
-    ? Boolean(
-        await dbFirst(
+  const [liked, localLikeCount, commentRow] = await Promise.all([
+    session?.user
+      ? dbFirst(
           `SELECT 1 as ok FROM likes WHERE user_id = ? AND target_type = 'dramabos' AND target_id = ?`,
           session.user.id,
           targetId,
-        ),
-      )
-    : false;
-  const localLikeCount = await countLocalLikes("dramabos", targetId);
+        ).then((row) => Boolean(row))
+      : Promise.resolve(false),
+    countLocalLikes("dramabos", targetId),
+    dbFirst<{ c: number }>(
+      `SELECT COUNT(*) as c FROM comments WHERE target_type = 'dramabos' AND target_id = ? AND deleted_at IS NULL`,
+      targetId,
+    ),
+  ]);
   const combinedLikes = (detail.likes || 0) + localLikeCount;
-  const commentRow = await dbFirst<{ c: number }>(
-    `SELECT COUNT(*) as c FROM comments WHERE target_type = 'dramabos' AND target_id = ? AND deleted_at IS NULL`,
-    targetId,
-  );
   const commentCount = commentRow?.c ?? 0;
 
   return (
@@ -177,29 +179,11 @@ export default async function DramaWatchPage({
           })}
         </div>
 
-        {related.length ? (
-          <div className="space-y-2 border-t border-[var(--color-neutral-800)] pt-3">
-            <h3 className="m-0 text-[14px] font-extrabold text-[var(--color-neutral-100)]">
-              Drama terkait
-            </h3>
-            <div className="flex gap-2.5 overflow-x-auto pb-1">
-              {related.map((item) => (
-                <Link
-                  key={`${item.provider}-${item.id}`}
-                  href={`/drama/${item.provider}/${encodeURIComponent(item.id)}`}
-                  className="w-[108px] shrink-0 text-[var(--color-neutral-100)] no-underline"
-                >
-                  <div className="portrait-card relative overflow-hidden rounded-sm">
-                    <CoverImage src={item.cover} alt={item.title} />
-                  </div>
-                  <div className="mt-1.5 line-clamp-2 text-[11px] font-semibold leading-snug text-white/90">
-                    {item.title}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        <RelatedDramas
+          provider={provider}
+          id={detail.id}
+          category={detail.category}
+        />
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
 import { looksEnglish, translateToBahasa, withLiveTranslate } from "./translate";
 import { toDramaTitleCase } from "./titleCase";
 import type { DramaCard, DramaDetail, StreamResult } from "./types";
+import { cache } from "react";
+import { getCloudflareEnv } from "./cf";
 
 /**
  * DramaBuzz / DramaBos-compatible client.
@@ -179,6 +181,39 @@ function providerBase(provider: string) {
   // Drakula-hosted apps expose the stable surface under /api/{provider}/...
   if (DRAKULA_PROVIDERS.has(provider)) return `${host}/api/${provider}`;
   return host;
+}
+
+/** Per-request memo so detail + stream share one ReelShort allepisodes fetch. */
+const fetchReelshortAlleps = cache(async (id: string) => {
+  const host = hostFor("reelshort");
+  const lang = feedLang("reelshort");
+  return fetchJson(withCode(`${host}/allepisodes/${encodeURIComponent(id)}?lang=${lang}`));
+});
+
+const DETAIL_CACHE_TTL = 180;
+
+async function readDetailCache(provider: string, id: string): Promise<DramaDetail | null> {
+  try {
+    const env = await getCloudflareEnv();
+    const raw = await env?.AURA_CACHE?.get(`drama:detail:v2:${provider}:${id}`, "json");
+    if (!raw || typeof raw !== "object") return null;
+    const detail = raw as DramaDetail;
+    if (!detail.id || !detail.title) return null;
+    return detail;
+  } catch {
+    return null;
+  }
+}
+
+async function writeDetailCache(provider: string, id: string, detail: DramaDetail) {
+  try {
+    const env = await getCloudflareEnv();
+    await env?.AURA_CACHE?.put(`drama:detail:v2:${provider}:${id}`, JSON.stringify(detail), {
+      expirationTtl: DETAIL_CACHE_TTL,
+    });
+  } catch {
+    /* ignore cache write failures */
+  }
 }
 
 /**
@@ -785,18 +820,19 @@ async function localizeCards(cards: DramaCard[]): Promise<DramaCard[]> {
 
 async function localizeDetail(detail: DramaDetail): Promise<DramaDetail> {
   // Watch/detail must land in Bahasa even on cold Workers requests (D1 miss → live fill).
+  // Skip episode titles — watch UI only shows "Ep N", and mass-translating 30–70
+  // "Episode N" strings was dominating TTFB.
   return withLiveTranslate(async () => {
     const [base, synopsis] = await Promise.all([
       localizeCard(detail),
       detail.synopsis ? translateToBahasa(detail.synopsis) : Promise.resolve(""),
     ]);
-    const episodes = await Promise.all(
-      detail.episodes.map(async (ep) => ({
-        ...ep,
-        title: toDramaTitleCase(await translateToBahasa(ep.title)),
-      })),
-    );
-    return { ...detail, ...base, synopsis: synopsis || base.synopsis || "", episodes };
+    return {
+      ...detail,
+      ...base,
+      synopsis: synopsis || base.synopsis || "",
+      episodes: detail.episodes,
+    };
   });
 }
 
@@ -1448,18 +1484,21 @@ export async function getRelatedDramas(opts: {
 }): Promise<DramaCard[]> {
   const limit = Math.max(1, opts.limit ?? 5);
   const exclude = String(opts.id);
-  const category = String(opts.category || "romance");
 
-  const fromGenre = await getByGenre(category, opts.provider).catch(() => [] as DramaCard[]);
-  let merged = dedupe(fromGenre).filter((c) => c.id !== exclude);
+  // Prefer the provider rail (already warm from homepage) over genre search —
+  // genre search re-localizes dozens of English titles and was a major watch TTFB cost.
+  const rail = await getProviderRail(opts.provider, Math.max(12, limit * 3)).catch(
+    () => [] as DramaCard[],
+  );
+  let merged = dedupe(rail).filter((c) => c.id !== exclude);
 
   if (merged.length < limit) {
-    const rail = await getProviderRail(opts.provider, Math.max(12, limit * 3)).catch(
-      () => [] as DramaCard[],
-    );
-    merged = dedupe([...merged, ...rail.filter((c) => c.id !== exclude)]);
+    const category = String(opts.category || "romance");
+    const fromGenre = await getByGenre(category, opts.provider).catch(() => [] as DramaCard[]);
+    merged = dedupe([...merged, ...fromGenre.filter((c) => c.id !== exclude)]);
   }
 
+  // Titles are already localized by getTrending / getByGenre.
   return merged.slice(0, limit);
 }
 
@@ -1583,9 +1622,54 @@ export async function getDramaDetail(
   provider: string,
   id: string,
 ): Promise<DramaDetail | null> {
+  const cached = await readDetailCache(provider, id);
+  if (cached) return cached;
+
+  const detail = await fetchDramaDetailUncached(provider, id);
+  if (detail) {
+    void writeDetailCache(provider, id, detail);
+  }
+  return detail;
+}
+
+async function fetchDramaDetailUncached(
+  provider: string,
+  id: string,
+): Promise<DramaDetail | null> {
   const host = hostFor(provider);
   const basePath = providerBase(provider);
   const encoded = encodeURIComponent(id);
+
+  // ReelShort: one detail + shared allepisodes (also used by getStream) — no path probing.
+  if (provider === "reelshort") {
+    const lang = feedLang(provider);
+    const [detailRes, allRes] = await Promise.all([
+      fetchJson(withCode(`${host}/detail/${encoded}?lang=${lang}`)),
+      fetchReelshortAlleps(id),
+    ]);
+    if (detailRes.ok && detailRes.data) {
+      const row = detailRes.data as Record<string, unknown>;
+      const base =
+        normalizeCard(row, provider, { requireCover: false }) ||
+        cardFromRow(provider, row, id);
+      if (base) {
+        const chapterRows = asArray(
+          (allRes.data as Record<string, unknown> | undefined)?.episodes || allRes.data,
+        );
+        const episodes = mapEpisodeRows(chapterRows, base, {
+          numberKeys: ["episode", "number"],
+          titleKeys: ["name", "title"],
+        });
+        return localizeDetail({
+          ...base,
+          synopsis: base.synopsis || pickString(row, ["desc", "introduction", "description"]),
+          episodeCount: episodes.length || base.episodeCount || pickNumber(row, ["chapters"]),
+          episodes: episodes.length > 0 ? episodes : syntheticEpisodes(base),
+          hashtags: ["dracin", provider, String(base.category || "romance")],
+        });
+      }
+    }
+  }
 
   if (provider === "goodshort") {
     const detailRes = await fetchJson(`${host}/book/${encoded}?lang=${LANG === "id" ? "in" : LANG}`);
@@ -2201,8 +2285,7 @@ export async function getStream(
 
   if (provider === "reelshort") {
     // Prefer 540p / -ld H.264 — 720p+ is often HEVC (hvc1) which Chrome MSE cannot play.
-    const lang = feedLang(provider);
-    const all = await fetchJson(withCode(`${host}/allepisodes/${encoded}?lang=${lang}`));
+    const all = await fetchReelshortAlleps(id);
     if (all.ok) {
       const root = all.data as Record<string, unknown> | undefined;
       const nested =

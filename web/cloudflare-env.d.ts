@@ -65,6 +65,20 @@ declare global {
     CRON_SECRET?: string;
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;
+    AI?: {
+      run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
+    };
+    MEDIA?: {
+      input: (stream: ReadableStream | ArrayBuffer | Uint8Array) => {
+        transform: (opts?: Record<string, unknown>) => {
+          output: (opts: Record<string, unknown>) => { response: () => Promise<Response> };
+        };
+        output: (opts: Record<string, unknown>) => { response: () => Promise<Response> };
+      };
+    };
+    IMAGES?: {
+      input: (stream: ReadableStream | ArrayBuffer | Uint8Array) => unknown;
+    };
   }
 }
 
