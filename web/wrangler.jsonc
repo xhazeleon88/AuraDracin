@@ -33,7 +33,9 @@
     "DRAMABOS_DEFAULT_PROVIDER": "reelshort",
     "DRAMABOS_LANG": "id",
     "ADMIN_EMAIL": "admin@auradracin.com",
-    "HOME_CACHE_TTL_SEC": "120"
+    "HOME_CACHE_TTL_SEC": "120",
+    "AUTH_URL": "https://aura-dracin.seo1-c33.workers.dev",
+    "NEXT_PUBLIC_SITE_URL": "https://aura-dracin.seo1-c33.workers.dev"
   },
   "kv_namespaces": [
     {

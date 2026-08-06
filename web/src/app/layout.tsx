@@ -10,10 +10,19 @@ const archivo = Archivo({
   variable: "--font-archivo",
 });
 
-const SITE_URL =
-  process.env.AUTH_URL?.replace(/\/$/, "") ||
-  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
-  "https://aura-dracin.seo1-c33.workers.dev";
+const SITE_URL = (() => {
+  const raw =
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    process.env.AUTH_URL?.trim() ||
+    "";
+  const cleaned = raw.replace(/\/$/, "");
+  if (cleaned && !/localhost|127\.0\.0\.1/i.test(cleaned)) return cleaned;
+  // Workers / production deploy — never emit localhost OG URLs.
+  if (process.env.CLOUDFLARE_WORKERS === "1" || process.env.NEXTJS_ENV === "production") {
+    return "https://aura-dracin.seo1-c33.workers.dev";
+  }
+  return cleaned || "https://aura-dracin.seo1-c33.workers.dev";
+})();
 
 const SITE_TITLE = "AuraDracin - Drama Singkat Baper Melekat";
 const SITE_DESCRIPTION =

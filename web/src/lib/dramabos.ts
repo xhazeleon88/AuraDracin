@@ -515,19 +515,85 @@ function normalizeCoverKey(cover: string) {
   }
 }
 
+/** Map EN/ID/TL content words so translated titles of the same show collide. */
+const TITLE_SYNONYMS: Record<string, string> = {
+  bubong: "roof",
+  atap: "roof",
+  dalawang: "double",
+  ganda: "double",
+  dua: "double",
+  cinta: "love",
+  love: "love",
+  kisah: "story",
+  cerita: "story",
+  story: "story",
+  dibawah: "under",
+  bawah: "under",
+  under: "under",
+  satu: "one",
+  one: "one",
+  isang: "one",
+  roof: "roof",
+  double: "double",
+};
+
+const TITLE_STOP = new Set([
+  "the",
+  "a",
+  "an",
+  "of",
+  "and",
+  "or",
+  "to",
+  "in",
+  "on",
+  "for",
+  "my",
+  "your",
+  "di",
+  "yang",
+  "dengan",
+  "dari",
+  "untuk",
+  "sa",
+  "ang",
+  "mga",
+  "ng",
+  "na",
+  "dubbed",
+  "subbed",
+  "dub",
+  "sub",
+]);
+
+function titleFingerprint(title: string) {
+  const tokens = title
+    .toLowerCase()
+    .replace(/\((dubbed|subbed|dub|sub)\)/gi, " ")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .split(/\s+/)
+    .map((t) => TITLE_SYNONYMS[t] || t)
+    .filter((t) => t.length > 1 && !TITLE_STOP.has(t));
+  return [...new Set(tokens)].sort().join(" ");
+}
+
 function titleLocaleScore(title: string) {
   const t = title.trim();
+  const dubbedPenalty = /\((dubbed|subbed|dub|sub)\)/i.test(t) ? 1 : 0;
+  let base = 0;
   if (
     /\b(yang|dengan|dari|untuk|adalah|ternyata|seorang|di bawah|satu|atap|kisah|cinta|ganda|aku|dia|suami|istri|bos|mantan|keluarga|rahasia|balas|dendam)\b/i.test(
       t,
     )
   ) {
-    return 3;
+    base = 30;
+  } else if (looksEnglish(t)) {
+    base = 20;
+  } else if (/^[\x00-\x7F]+$/.test(t) && /[A-Za-z]{3,}/.test(t)) {
+    // Latin but not ID/EN — often Tagalog or other regional titles.
+    base = 10;
   }
-  if (looksEnglish(t)) return 2;
-  // Latin but not ID/EN — often Tagalog or other regional titles.
-  if (/^[\x00-\x7F]+$/.test(t) && /[A-Za-z]{3,}/.test(t)) return 1;
-  return 0;
+  return base - dubbedPenalty;
 }
 
 function engagementScore(card: DramaCard) {
@@ -544,9 +610,25 @@ function preferLocaleCard(a: DramaCard, b: DramaCard) {
   return a;
 }
 
+function mergeIntoBucket(
+  out: DramaCard[],
+  indexByKey: Map<string, number>,
+  key: string,
+  card: DramaCard,
+) {
+  if (indexByKey.has(key)) {
+    const idx = indexByKey.get(key)!;
+    out[idx] = preferLocaleCard(out[idx], card);
+    return true;
+  }
+  indexByKey.set(key, out.length);
+  out.push(card);
+  return false;
+}
+
 /**
- * Collapse exact id dupes, then same-provider locale variants that share cover art
- * (e.g. DramaWave EN / ID / Tagalog rows for one show).
+ * Collapse exact id dupes, then same-provider locale variants that share cover
+ * art or a translated title fingerprint (e.g. DramaWave EN / ID / Tagalog).
  */
 function dedupe(cards: DramaCard[]) {
   const byId = new Map<string, DramaCard>();
@@ -557,16 +639,45 @@ function dedupe(cards: DramaCard[]) {
 
   const out: DramaCard[] = [];
   const coverIndex = new Map<string, number>();
+  const titleIndex = new Map<string, number>();
+
   for (const card of byId.values()) {
     const coverKey = card.cover
-      ? `${card.provider}:${normalizeCoverKey(card.cover)}`
+      ? `${card.provider}:cover:${normalizeCoverKey(card.cover)}`
       : "";
-    if (coverKey && coverIndex.has(coverKey)) {
-      const idx = coverIndex.get(coverKey)!;
-      out[idx] = preferLocaleCard(out[idx], card);
+    if (coverKey && mergeIntoBucket(out, coverIndex, coverKey, card)) {
+      const fp = titleFingerprint(card.title);
+      if (fp) titleIndex.set(`${card.provider}:title:${fp}`, coverIndex.get(coverKey)!);
       continue;
     }
+
+    const fp = titleFingerprint(card.title);
+    const titleKey =
+      fp.length >= 8 ? `${card.provider}:title:${fp}` : "";
+    // Prefer matching title fingerprints even when covers differ (localized posters).
+    // Require episodeCount agreement when both sides have it.
+    if (titleKey && titleIndex.has(titleKey)) {
+      const idx = titleIndex.get(titleKey)!;
+      const existing = out[idx];
+      const epsA = existing.episodeCount;
+      const epsB = card.episodeCount;
+      if (
+        typeof epsA === "number" &&
+        typeof epsB === "number" &&
+        epsA > 0 &&
+        epsB > 0 &&
+        epsA !== epsB
+      ) {
+        // Different episode counts → treat as different shows.
+      } else {
+        out[idx] = preferLocaleCard(existing, card);
+        if (coverKey) coverIndex.set(coverKey, idx);
+        continue;
+      }
+    }
+
     if (coverKey) coverIndex.set(coverKey, out.length);
+    if (titleKey) titleIndex.set(titleKey, out.length);
     out.push(card);
   }
   return out;
