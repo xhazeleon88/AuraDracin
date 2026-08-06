@@ -6,7 +6,10 @@ export type CloudflareBindings = {
   NEXT_INC_CACHE_KV?: KVNamespace;
   ASSETS?: Fetcher;
   WORKER_SELF_REFERENCE?: Fetcher;
-  IMAGES?: unknown;
+  // Cloudflare Images binding (OpenNext / wrangler `images.binding`).
+  IMAGES?: {
+    input: (stream: ReadableStream | ArrayBuffer | Uint8Array) => unknown;
+  };
 };
 
 export async function getCloudflareEnv(): Promise<CloudflareBindings | null> {

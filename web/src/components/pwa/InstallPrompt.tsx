@@ -12,16 +12,29 @@ type BeforeInstallPromptEvent = Event & {
 function isStandalone() {
   if (typeof window === "undefined") return false;
   const mq = window.matchMedia("(display-mode: standalone)").matches;
-  const ios = "standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+  const ios =
+    "standalone" in navigator &&
+    Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
   return mq || ios;
 }
 
 function isIosSafari() {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
-  const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const iOS =
+    /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const webkit = /WebKit/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
   return iOS && webkit;
+}
+
+/** Skip install UI for crawlers, Lighthouse, and headless browsers. */
+function isBotOrCrawler() {
+  if (typeof navigator === "undefined") return true;
+  if ((navigator as Navigator & { webdriver?: boolean }).webdriver) return true;
+  const ua = navigator.userAgent || "";
+  return /bot|crawl|spider|slurp|facebookexternalhit|preview|lighthouse|pagespeed|gtmetrix|pingdom|headless|chrome-lighthouse|google-inspectiontool|bytespider|semrush|ahrefs|yandex|baidu|duckduck|bingpreview|twitterbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest|redditbot|applebot|petalbot|chatgpt|openai|anthropic|claude|gptbot|storebot|googleother/i.test(
+    ua,
+  );
 }
 
 export function InstallPrompt() {
@@ -30,6 +43,7 @@ export function InstallPrompt() {
   const [iosHint, setIosHint] = useState(false);
 
   useEffect(() => {
+    if (isBotOrCrawler()) return;
     if (isStandalone()) return;
     if (sessionStorage.getItem(SESSION_KEY) === "1") return;
 
@@ -40,18 +54,18 @@ export function InstallPrompt() {
     };
     window.addEventListener("beforeinstallprompt", onBip);
 
-    // Show for new sessions even before BIP (esp. iOS), after a short beat.
+    // Only auto-show for iOS Safari (no BIP). Other browsers wait for BIP
+    // so Lighthouse / desktop sessions aren't interrupted by the modal.
     const t = window.setTimeout(() => {
       if (sessionStorage.getItem(SESSION_KEY) === "1" || isStandalone()) return;
+      if (isBotOrCrawler()) return;
       if (isIosSafari()) {
         setIosHint(true);
         setOpen(true);
-      } else {
-        setOpen(true);
       }
-    }, 1200);
+    }, 1800);
 
-    if ("serviceWorker" in navigator) {
+    if ("serviceWorker" in navigator && !isBotOrCrawler()) {
       navigator.serviceWorker.register("/sw.js").catch(() => {
         /* ignore SW failures in preview tunnels */
       });

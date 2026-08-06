@@ -87,9 +87,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="id">
       <head>
         <link
-          rel="stylesheet"
+          rel="preload"
+          as="style"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
         />
+        <link
+          id="fa-css"
+          rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+          media="print"
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              '(function(){var l=document.getElementById("fa-css");if(!l)return;l.addEventListener("load",function(){l.media="all"});l.media="all"})();',
+          }}
+        />
+        <noscript>
+          <link
+            rel="stylesheet"
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+          />
+        </noscript>
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
         <link rel="apple-touch-icon" href="/icons/icon-180.png" />
