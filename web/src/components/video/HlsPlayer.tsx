@@ -197,15 +197,11 @@ export function HlsPlayer({
     if (!subtitleUrl || isImage) {
       setCues([]);
       setActiveText("");
-      setSubsError("");
-      setSubsLoading(false);
       return;
     }
 
     let cancelled = false;
     const controller = new AbortController();
-    setSubsLoading(true);
-    setSubsError("");
     setCues([]);
     setActiveText("");
 
@@ -214,26 +210,15 @@ export function HlsPlayer({
         const text = await res.text();
         if (cancelled) return;
         if (!text.includes("WEBVTT")) {
-          setSubsError("Subtitle gagal dimuat");
-          return;
-        }
-        const parsed = parseVtt(text);
-        if (!parsed.length) {
-          const note = text.match(/NOTE\s*\n([\s\S]*?)(?:\n\n|$)/)?.[1]?.trim();
-          setSubsError(note || "Subtitle belum tersedia");
           setCues([]);
           return;
         }
+        const parsed = parseVtt(text);
         setCues(parsed);
-        setSubsError("");
       })
       .catch((err) => {
         if (cancelled || err?.name === "AbortError") return;
-        setSubsError("Subtitle gagal dimuat");
         setCues([]);
-      })
-      .finally(() => {
-        if (!cancelled) setSubsLoading(false);
       });
 
     return () => {
