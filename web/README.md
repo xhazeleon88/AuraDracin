@@ -29,40 +29,28 @@ Open http://localhost:3000
 
 ## Deploy to Cloudflare Workers
 
-This app uses [OpenNext](https://opennext.js.org/cloudflare) + D1.
+This app uses [OpenNext](https://opennext.js.org/cloudflare) + D1 + KV.
 
 ```bash
 cd web
-# Authenticate once
 npx wrangler login
 
-# Set production secrets
 npx wrangler secret put AUTH_SECRET
 npx wrangler secret put DRAMABOS_API_KEY
 npx wrangler secret put ADMIN_PASSWORD
 
-# Optional: set the public URL after first deploy
-# npx wrangler secret put AUTH_URL   # https://aura-dracin.<account>.workers.dev
-
 npm run deploy
+
+# Warm homepage snapshot (recommended after deploy)
+curl https://aura-dracin.<subdomain>.workers.dev/api/cron/warm-home
 ```
 
-Config lives in `wrangler.jsonc` (Worker name `aura-dracin`, D1 binding `DB`).
+Performance notes:
 
-Notes for Workers:
-
-| Concern | Behavior |
-|---------|----------|
-| Database | Cloudflare D1 (`DB`) — not `better-sqlite3` |
-| Subtitles (ffmpeg/whisper) | `SUBTITLES_MODE=cache-only` — serves D1 cache / NOTE VTT |
-| Local admin uploads | Disabled on Workers until R2 is enabled |
-| Image optimization | Workers Images binding |
-
-Preview the Workers runtime locally:
-
-```bash
-npm run preview
-```
+- Homepage is ISR-cached; search is at `/cari`
+- `AURA_CACHE` KV holds a homepage JSON snapshot (SWR)
+- `NEXT_INC_CACHE_KV` backs OpenNext incremental cache
+- Smart Placement is enabled in `wrangler.jsonc`
 
 ## DramaBuzz / DramaBos API
 
