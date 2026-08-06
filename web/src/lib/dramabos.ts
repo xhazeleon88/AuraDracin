@@ -605,10 +605,14 @@ function titleLocaleScore(title: string) {
     )
   ) {
     base = 30;
+  } else if (
+    /\b(isang|mga|dalawang|bubong|nang|kay|niya|ito)\b/i.test(t)
+  ) {
+    // Tagalog / other PH locale titles — keep below English so we can translate.
+    base = 8;
   } else if (looksEnglish(t)) {
     base = 20;
   } else if (/^[\x00-\x7F]+$/.test(t) && /[A-Za-z]{3,}/.test(t)) {
-    // Latin but not ID/EN — often Tagalog or other regional titles.
     base = 10;
   }
   return base - dubbedPenalty;
