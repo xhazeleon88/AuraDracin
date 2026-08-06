@@ -1,17 +1,20 @@
-/_next/static/*
-  Cache-Control: public,max-age=31536000,immutable
+# Cloudflare Workers static asset cache headers
+# https://developers.cloudflare.com/workers/static-assets/headers/
+
+/studios/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400, immutable
 
 /icons/*
-  Cache-Control: public,max-age=86400,stale-while-revalidate=604800
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400, immutable
 
 /assets/*
-  Cache-Control: public,max-age=86400,stale-while-revalidate=604800
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400, immutable
 
 /favicon.ico
-  Cache-Control: public,max-age=86400
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400, immutable
+
+/og-image.jpg
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400, immutable
 
 /sw.js
-  Cache-Control: public,max-age=0,must-revalidate
-
-/manifest.webmanifest
-  Cache-Control: public,max-age=3600
+  Cache-Control: public, max-age=0, must-revalidate
