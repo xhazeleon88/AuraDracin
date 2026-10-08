@@ -7,7 +7,10 @@ import { BottomNav } from "./BottomNav";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isWatch = pathname.startsWith("/video/") || pathname.startsWith("/drama/");
+  const isWatch =
+    pathname.startsWith("/video/") ||
+    pathname.startsWith("/drama/") ||
+    pathname.startsWith("/dev/player");
 
   return (
     <div className="min-h-screen bg-[var(--color-neutral-400)]/30">
