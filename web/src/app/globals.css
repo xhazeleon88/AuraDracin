@@ -87,6 +87,26 @@ h4 {
 
 .watch-page {
   min-height: 100%;
+  height: 100%;
+  flex: 1;
+}
+
+.phone-shell:has(.watch-page) > main {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes sheetUp {
+  from {
+    transform: translate(-50%, 12%);
+    opacity: 0.85;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
 }
 
 .btn {

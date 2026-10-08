@@ -75,27 +75,27 @@ export function EngagementRail({
 
   return (
     <>
-      {/* Right rail — above custom scrubber, clear of subtitle zone */}
-      <div className="pointer-events-none absolute bottom-[78px] right-2 top-16 z-30 flex items-end justify-end sm:right-3">
-        <div className="pointer-events-auto flex flex-col items-center gap-4 text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
-          <button type="button" className="flex flex-col items-center gap-1" onClick={toggleLike}>
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/25 backdrop-blur-[2px]">
+      {/* Right rail — stacked above caption / scrubber, TikTok spacing */}
+      <div className="pointer-events-none absolute bottom-[100px] right-1.5 z-30 flex items-end justify-end sm:right-2.5">
+        <div className="pointer-events-auto flex flex-col items-center gap-3.5 text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
+          <button type="button" className="flex flex-col items-center gap-0.5" onClick={toggleLike}>
+            <span className="flex h-12 w-12 items-center justify-center">
               <i
-                className="fa-solid fa-heart text-[22px]"
+                className="fa-solid fa-heart text-[28px]"
                 style={{ color: liked ? "var(--color-accent)" : "white" }}
               />
             </span>
-            <span className="text-[11px] font-semibold">{fmtNum(likes)}</span>
+            <span className="text-[11px] font-bold">{fmtNum(likes)}</span>
           </button>
-          <button type="button" className="flex flex-col items-center gap-1" onClick={loadComments}>
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/25 backdrop-blur-[2px]">
-              <i className="fa-solid fa-comment text-[21px]" />
+          <button type="button" className="flex flex-col items-center gap-0.5" onClick={loadComments}>
+            <span className="flex h-12 w-12 items-center justify-center">
+              <i className="fa-solid fa-comment-dots text-[26px]" />
             </span>
-            <span className="text-[11px] font-semibold">{fmtNum(commentCount)}</span>
+            <span className="text-[11px] font-bold">{fmtNum(commentCount)}</span>
           </button>
           <button
             type="button"
-            className="flex flex-col items-center gap-1"
+            className="flex flex-col items-center gap-0.5"
             onClick={async () => {
               if (navigator.share) {
                 await navigator.share({ url: window.location.href, title: document.title });
@@ -104,10 +104,10 @@ export function EngagementRail({
               }
             }}
           >
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/25 backdrop-blur-[2px]">
-              <i className="fa-solid fa-share text-[19px]" />
+            <span className="flex h-12 w-12 items-center justify-center">
+              <i className="fa-solid fa-share text-[24px]" />
             </span>
-            <span className="text-[11px] font-semibold">Bagikan</span>
+            <span className="text-[11px] font-bold">Bagikan</span>
           </button>
         </div>
       </div>

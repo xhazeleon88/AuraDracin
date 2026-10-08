@@ -113,6 +113,7 @@ export function HlsPlayer({
   const [subsOn, setSubsOn] = useState(true);
   const [subsPending, setSubsPending] = useState(false);
   const [playing, setPlaying] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -121,6 +122,28 @@ export function HlsPlayer({
   const playable = toPlayableSrc(src, type);
   const isImage = Boolean(src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i));
   const hasSubs = cues.length > 0;
+
+  async function tryPlay(video: HTMLVideoElement, preferUnmuted = true) {
+    if (preferUnmuted) {
+      video.muted = false;
+      setMuted(false);
+      try {
+        await video.play();
+        setPlaying(true);
+        return;
+      } catch {
+        /* fall through — browsers often block unmuted autoplay */
+      }
+    }
+    video.muted = true;
+    setMuted(true);
+    try {
+      await video.play();
+      setPlaying(true);
+    } catch {
+      setPlaying(false);
+    }
+  }
 
   function bumpChrome() {
     setChromeVisible(true);
@@ -159,15 +182,10 @@ export function HlsPlayer({
       const isHls = looksLikeHls(src, type);
 
       if (!isHls) {
+        // Progressive MP4 (NetShort): play CDN URL direct — CORS already *.
         video!.removeAttribute("crossorigin");
-        video!.muted = false;
         video!.src = playable;
-        try {
-          await video!.play();
-          setPlaying(true);
-        } catch {
-          setPlaying(false);
-        }
+        await tryPlay(video!);
         return;
       }
 
@@ -208,33 +226,21 @@ export function HlsPlayer({
         instance.loadSource(playable);
         instance.attachMedia(video!);
         instance.on(Hls.Events.MANIFEST_PARSED, async () => {
-          video!.muted = false;
           try {
             const tracks = video!.textTracks;
             for (let i = 0; i < tracks.length; i++) tracks[i].mode = "disabled";
           } catch {
             /* ignore */
           }
-          try {
-            await video!.play();
-            setPlaying(true);
-          } catch {
-            setPlaying(false);
-          }
+          await tryPlay(video!);
         });
         hls = instance;
         return;
       }
 
       if (video!.canPlayType("application/vnd.apple.mpegurl")) {
-        video!.muted = false;
         video!.src = playable;
-        try {
-          await video!.play();
-          setPlaying(true);
-        } catch {
-          setPlaying(false);
-        }
+        await tryPlay(video!);
         return;
       }
 
@@ -486,6 +492,15 @@ export function HlsPlayer({
     bumpChrome();
   }
 
+  function toggleMute() {
+    const video = ref.current;
+    if (!video) return;
+    const next = !video.muted;
+    video.muted = next;
+    setMuted(next);
+    bumpChrome();
+  }
+
   if (isImage) {
     return (
       <div className="relative h-full w-full">
@@ -515,57 +530,73 @@ export function HlsPlayer({
         onClick={togglePlay}
       />
 
-      {/* Center play/pause flash */}
-      <button
-        type="button"
+      {/* Center play/pause flash — only when paused, never a broken native glyph */}
+      <div
         className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-200 ${
-          chromeVisible && !playing ? "opacity-100" : "opacity-0"
+          chromeVisible && !playing && !error ? "opacity-100" : "opacity-0"
         }`}
         aria-hidden
-        tabIndex={-1}
       >
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm">
-          <i className={`fa-solid ${playing ? "fa-pause" : "fa-play"} text-2xl ${playing ? "" : "ml-1"}`} />
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+          <i className="fa-solid fa-play ml-0.5 text-xl" />
         </span>
-      </button>
+      </div>
 
-      {/* Bahasa overlay — sits above progress, below engagement */}
+      {/* Compact mute + CC — top-right, away from engagement rail */}
+      <div
+        className={`absolute right-2 top-[max(52px,calc(env(safe-area-inset-top)+44px))] z-40 flex flex-col gap-2 transition-opacity duration-200 ${
+          chromeVisible || muted ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleMute();
+          }}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm"
+          aria-label={muted ? "Nyalakan suara" : "Bisukan"}
+          aria-pressed={muted}
+        >
+          <i className={`fa-solid ${muted ? "fa-volume-xmark" : "fa-volume-high"} text-sm`} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleSubs();
+          }}
+          className={`inline-flex h-9 min-w-9 items-center justify-center rounded-full px-2 text-[10px] font-extrabold tracking-wide backdrop-blur-sm ${
+            subsOn ? "bg-white text-black" : "bg-black/40 text-white"
+          }`}
+          aria-pressed={subsOn}
+          aria-label={subsOn ? "Matikan subtitle Bahasa" : "Nyalakan subtitle Bahasa"}
+        >
+          {subsPending && subsOn ? "…" : "CC"}
+        </button>
+      </div>
+
+      {/* Bahasa overlay — above caption + scrubber */}
       {subsOn && activeText ? (
-        <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[72px] z-30 flex justify-center px-4 sm:bottom-[80px]">
-          <div className="max-w-[92%] whitespace-pre-line rounded-md bg-black/88 px-3 py-1.5 text-center text-[13px] font-semibold leading-snug text-white sm:text-[14px]">
+        <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[118px] z-30 flex justify-center px-4 sm:bottom-[124px]">
+          <div className="max-w-[86%] whitespace-pre-line rounded-md bg-black/88 px-3 py-1.5 text-center text-[13px] font-semibold leading-snug text-white sm:text-[14px]">
             {activeText}
           </div>
         </div>
       ) : null}
 
-      {/* Bottom chrome: scrubber + CC */}
+      {/* Bottom chrome: thin scrubber only */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-8 transition-opacity duration-200 ${
-          chromeVisible ? "opacity-100" : "opacity-80"
+        className={`absolute inset-x-0 bottom-0 z-40 px-2 pb-[max(6px,env(safe-area-inset-bottom))] pt-6 transition-opacity duration-200 ${
+          chromeVisible ? "opacity-100" : "opacity-70"
         }`}
-        style={{
-          background: "linear-gradient(to top, rgba(0,0,0,0.72), transparent)",
-        }}
       >
-        <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-white/80">
-          <span className="tabular-nums">
-            {formatTime(currentTime)}
-            {duration ? ` / ${formatTime(duration)}` : ""}
-          </span>
-          <button
-            type="button"
-            onClick={toggleSubs}
-            className={`rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wide ${
-              subsOn ? "bg-white text-black" : "bg-white/15 text-white"
-            }`}
-            aria-pressed={subsOn}
-            aria-label={subsOn ? "Matikan subtitle Bahasa" : "Nyalakan subtitle Bahasa"}
-          >
-            {subsPending && subsOn ? "ID…" : "ID"}
-          </button>
+        <div className="mb-1 px-1 text-[10px] tabular-nums text-white/65">
+          {formatTime(currentTime)}
+          {duration ? ` / ${formatTime(duration)}` : ""}
         </div>
         <div
-          className="group relative h-5 cursor-pointer"
+          className="group relative h-4 cursor-pointer"
           onPointerDown={(e) => {
             e.stopPropagation();
             seekRatio(e.clientX, e.currentTarget);
@@ -580,15 +611,15 @@ export function HlsPlayer({
           aria-valuenow={Math.round(progress * 100)}
           aria-label="Progress video"
         >
-          <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-white/25">
+          <div className="absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 overflow-hidden rounded-full bg-white/30">
             <div
               className="h-full rounded-full bg-white transition-[width] duration-75"
               style={{ width: `${progress * 100}%` }}
             />
           </div>
           <div
-            className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow opacity-0 transition-opacity group-active:opacity-100"
-            style={{ left: `calc(${progress * 100}% - 6px)` }}
+            className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-white opacity-0 shadow transition-opacity group-active:opacity-100"
+            style={{ left: `calc(${progress * 100}% - 5px)` }}
           />
         </div>
       </div>
