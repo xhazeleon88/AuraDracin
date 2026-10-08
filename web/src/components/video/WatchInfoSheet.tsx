@@ -40,8 +40,13 @@ export function WatchInfoSheet({
       {/* TikTok-style caption — left bottom, clear of scrubber + rail */}
       <button
         type="button"
-        className="absolute bottom-[52px] left-3 right-[72px] z-[35] max-w-[78%] text-left sm:bottom-[56px]"
-        onClick={() => setOpen(true)}
+        className="absolute bottom-[52px] left-3 right-[72px] z-50 max-w-[78%] cursor-pointer touch-manipulation text-left sm:bottom-[56px]"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(true);
+        }}
         aria-expanded={open}
         aria-label="Buka detail drama"
       >

@@ -585,9 +585,9 @@ export function HlsPlayer({
         </div>
       ) : null}
 
-      {/* Bottom chrome: thin scrubber only */}
+      {/* Bottom chrome: thin scrubber only (keep z below caption/rail overlays) */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-40 px-2 pb-[max(6px,env(safe-area-inset-bottom))] pt-6 transition-opacity duration-200 ${
+        className={`pointer-events-none absolute inset-x-0 bottom-0 z-[25] px-2 pb-[max(6px,env(safe-area-inset-bottom))] pt-2 transition-opacity duration-200 ${
           chromeVisible ? "opacity-100" : "opacity-70"
         }`}
       >
@@ -596,7 +596,7 @@ export function HlsPlayer({
           {duration ? ` / ${formatTime(duration)}` : ""}
         </div>
         <div
-          className="group relative h-4 cursor-pointer"
+          className="pointer-events-auto group relative h-4 cursor-pointer"
           onPointerDown={(e) => {
             e.stopPropagation();
             seekRatio(e.clientX, e.currentTarget);
