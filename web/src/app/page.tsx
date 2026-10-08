@@ -9,8 +9,11 @@ import { CATEGORIES } from "@/lib/constants";
 import { getHomeSnapshot } from "@/lib/home-cache";
 import { providerDisplayName, providerSubtitle } from "@/lib/studios";
 
-/** ISR-friendly homepage — search lives on /cari so this route can be cached. */
-export const revalidate = 120;
+/**
+ * Always render on the Worker. Build-time SSG of / hangs on Dramabuzz fan-out
+ * (no KV yet); runtime uses getHomeSnapshot memory → KV → SWR instead.
+ */
+export const dynamic = "force-dynamic";
 
 function RailSkeleton({ title }: { title: string }) {
   return (
