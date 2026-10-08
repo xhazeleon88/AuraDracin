@@ -62,4 +62,4 @@ export type HomeSnapshot = {
   providerRails: { provider: string; items: DramaCard[] }[];
 };
 
-export const HOME_CACHE_KEY = "home:snapshot:v5";
+export const HOME_CACHE_KEY = "home:snapshot:v6";

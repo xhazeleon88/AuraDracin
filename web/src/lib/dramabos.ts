@@ -139,7 +139,7 @@ export const FEATURED_STUDIO_PROVIDERS = [
   "reelshort",
   "goodshort",
   "shortmax",
-  "idrama",
+  "netshort",
   "dramabox",
 ] as const;
 
