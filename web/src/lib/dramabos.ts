@@ -1371,57 +1371,56 @@ export async function searchDramas(q: string, provider = DEFAULT_PROVIDER): Prom
 }
 
 /** Prefer studios whose /drama/[provider]/[id] pages actually resolve. */
-export const FEATURED_SAFE_PROVIDERS = ["reelshort", "goodshort"] as const;
+export const FEATURED_SAFE_PROVIDERS = [
+  "reelshort",
+  "goodshort",
+  "shortmax",
+  "idrama",
+  "dramabox",
+  "netshort",
+] as const;
 
-/** Always pin these titles at the front of Unggulan (replacing the last slot). */
-export const FEATURED_PINNED: { provider: string; id: string }[] = [
-  { provider: "reelshort", id: "6a469b12d3f5c65f7f095b8a" },
-];
+/** Titles permanently kept out of Unggulan (retired pins / broken watch links). */
+const FEATURED_EXCLUDED = new Set<string>([
+  "reelshort:6a469b12d3f5c65f7f095b8a", // Kamu telah Tergantikan, Cinta Pertama
+]);
 
-/** Build Unggulan slides: pinned first, then safe high-engagement titles. */
+function featuredScore(card: DramaCard) {
+  const views = card.views || 0;
+  const likes = card.likes || 0;
+  const eps = card.episodeCount || 0;
+  // Engagement first, slight boost for fuller series so Unggulan feels "complete".
+  return views + likes * 24 + Math.min(eps, 40) * 50;
+}
+
+/** Build Unggulan slides from live catalog ranking (no manual pins). */
 export async function buildFeaturedSlides(
   catalog: DramaCard[],
   limit = 5,
 ): Promise<DramaCard[]> {
-  const pinned: DramaCard[] = [];
-  for (const ref of FEATURED_PINNED) {
-    const fromCatalog = catalog.find((c) => c.provider === ref.provider && c.id === ref.id);
-    if (fromCatalog) {
-      pinned.push(fromCatalog);
-      continue;
-    }
-    const detail = await getDramaDetail(ref.provider, ref.id).catch(() => null);
-    if (detail) {
-      // Leave likes/views raw here — page runs mergeLocalLikes so Unggulan
-      // matches the watch-page engagement numbers.
-      pinned.push({
-        id: detail.id,
-        provider: detail.provider,
-        title: detail.title,
-        cover: detail.cover,
-        synopsis: detail.synopsis,
-        episodeCount: detail.episodeCount,
-        category: detail.category,
-        likes: detail.likes,
-        views: detail.views,
-        source: "dramabos",
-      });
-    }
-  }
-
-  const pinnedKeys = new Set(pinned.map((c) => `${c.provider}:${c.id}`));
   const safe = new Set<string>(FEATURED_SAFE_PROVIDERS);
   const pool = catalog.filter(
-    (c) => safe.has(c.provider) && !pinnedKeys.has(`${c.provider}:${c.id}`),
+    (c) =>
+      safe.has(c.provider) &&
+      !FEATURED_EXCLUDED.has(`${c.provider}:${c.id}`) &&
+      Boolean(c.cover) &&
+      Boolean(c.title),
   );
-  const rest = [...pool]
-    .sort(
-      (a, b) =>
-        (b.views || 0) + (b.likes || 0) * 20 - ((a.views || 0) + (a.likes || 0) * 20),
-    )
-    .slice(0, Math.max(0, limit - pinned.length));
 
-  return dedupe([...pinned, ...rest]).slice(0, limit);
+  // Diversify studios: take best per provider first, then fill by score.
+  const byProvider = new Map<string, DramaCard>();
+  for (const card of [...pool].sort((a, b) => featuredScore(b) - featuredScore(a))) {
+    if (!byProvider.has(card.provider)) byProvider.set(card.provider, card);
+  }
+  const diversified = [...byProvider.values()].sort(
+    (a, b) => featuredScore(b) - featuredScore(a),
+  );
+  const pickedKeys = new Set(diversified.map((c) => `${c.provider}:${c.id}`));
+  const fillers = [...pool]
+    .filter((c) => !pickedKeys.has(`${c.provider}:${c.id}`))
+    .sort((a, b) => featuredScore(b) - featuredScore(a));
+
+  return dedupe([...diversified, ...fillers]).slice(0, limit);
 }
 
 /** Genre & Category API */
@@ -2424,13 +2423,13 @@ async function fetchStreamUncached(
     if (res.ok && res.data) {
       const data = unwrapData(res.data);
       const list = asArray(data.shortPlayEpisodeList || data);
-      const target = list[ep - 1];
+      const target =
+        list.find((row) => pickNumber(row, ["episodeNo", "episode", "number"]) === ep) ||
+        list[ep - 1];
       if (target) {
-        return streamFromUrl(
-          pickString(target, ["playVoucher", "playUrl", "url", "videoUrl"]),
-          undefined,
-          "mp4",
-        );
+        const url = pickString(target, ["playVoucher", "playUrl", "url", "videoUrl"]);
+        // NetShort serves progressive MP4 (mime_type=video_mp4) on *.netshort.com CDNs.
+        return streamFromUrl(url, undefined, url.includes(".m3u8") ? "hls" : "mp4");
       }
     }
   }

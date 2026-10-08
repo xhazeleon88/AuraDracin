@@ -8,6 +8,10 @@ const ALLOWED_HOST_SUFFIXES = [
   "dramabuzz.sbs",
   "akamaized.net",
   "cloudfront.net",
+  // NetShort progressive MP4 / cover CDNs
+  "netshort.com",
+  "bytevdn.com",
+  "byteimg.com",
 ];
 
 function isAllowed(url: URL) {
@@ -71,12 +75,16 @@ export async function GET(req: NextRequest) {
   try {
     // GoodShort CDN (CloudFront) returns 403 when Referer is
     // goodshort.goodbos.online — fetch without Referer/Origin.
+    const upstreamHeaders: Record<string, string> = {
+      "User-Agent":
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      Accept: "*/*",
+    };
+    const range = req.headers.get("range");
+    if (range) upstreamHeaders.Range = range;
+
     const upstream = await fetch(target.toString(), {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-        Accept: "*/*",
-      },
+      headers: upstreamHeaders,
       cache: "no-store",
       redirect: "follow",
     });
@@ -108,13 +116,21 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const buf = await upstream.arrayBuffer();
-    return new NextResponse(buf, {
-      headers: {
-        "Content-Type": contentType || "application/octet-stream",
-        "Cache-Control": "public, max-age=3600",
-        "Access-Control-Allow-Origin": "*",
-      },
+    // Stream bytes through (esp. large MP4) — never buffer whole files in Worker memory.
+    const headers = new Headers();
+    headers.set("Content-Type", contentType || "application/octet-stream");
+    headers.set("Cache-Control", "public, max-age=3600");
+    headers.set("Access-Control-Allow-Origin", "*");
+    const len = upstream.headers.get("content-length");
+    if (len) headers.set("Content-Length", len);
+    const contentRange = upstream.headers.get("content-range");
+    if (contentRange) headers.set("Content-Range", contentRange);
+    const acceptRanges = upstream.headers.get("accept-ranges");
+    if (acceptRanges) headers.set("Accept-Ranges", acceptRanges);
+
+    return new NextResponse(upstream.body, {
+      status: upstream.status,
+      headers,
     });
   } catch (error) {
     return NextResponse.json(

@@ -26,7 +26,6 @@ export default async function DramaWatchPage({
   const episode = Math.max(1, Number(ep || 1) || 1);
   const dramaId = decodeURIComponent(id);
 
-  // Auth + detail in parallel — don't serialize the session lookup.
   const [session, rawDetail] = await Promise.all([
     auth(),
     getDramaDetail(provider, dramaId),
@@ -34,7 +33,6 @@ export default async function DramaWatchPage({
   if (!rawDetail) notFound();
   const detail = enrichDramaEngagement(rawDetail);
 
-  // Stream only on the critical path. Related titles load client-side after paint.
   const stream = await getStream(provider, detail.id, episode);
 
   const nextEpisode = detail.episodes.find((item) => item.number === episode + 1);
@@ -45,7 +43,6 @@ export default async function DramaWatchPage({
     ? `/api/subtitles?provider=${encodeURIComponent(provider)}&id=${encodeURIComponent(detail.id)}&ep=${episode}&v=4`
     : undefined;
 
-  // Kick off Bahasa subtitle generation / cache warm without blocking HTML.
   if (stream?.url) {
     void runInBackground(() =>
       getBahasaSubtitles({
@@ -80,23 +77,10 @@ export default async function DramaWatchPage({
   const commentCount = commentRow?.c ?? 0;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-neutral-900)] text-[var(--color-neutral-100)]">
-      {/* Keep back control outside the video so it never fights native fullscreen/PiP chrome */}
-      <div className="flex shrink-0 items-center gap-2 px-2 py-1.5">
-        <Link
-          href="/"
-          className="icon-btn !text-white hover:!text-white"
-          aria-label="Kembali"
-        >
-          <i className="fa-solid fa-chevron-left text-xl" />
-        </Link>
-        <span className="truncate text-[13px] font-semibold text-[var(--color-neutral-100)]">
-          {detail.title}
-        </span>
-      </div>
-
-      <div className="flex min-h-0 flex-1 items-center justify-center">
-        <div className="relative h-full max-w-full aspect-[9/16] bg-[var(--color-neutral-800)]">
+    <div className="watch-page flex min-h-0 flex-1 flex-col overflow-hidden bg-black text-white">
+      {/* Full-bleed stage: fills phone viewport, letterboxes on desktop */}
+      <div className="relative min-h-0 flex-1 bg-black">
+        <div className="absolute inset-0 mx-auto h-full w-full max-w-[480px]">
           {stream?.url ? (
             <HlsPlayer
               src={stream.url}
@@ -118,6 +102,33 @@ export default async function DramaWatchPage({
               </p>
             </div>
           )}
+
+          {/* Top overlay: back + title */}
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start gap-2 px-2 pt-[max(8px,env(safe-area-inset-top))]"
+            style={{
+              background: "linear-gradient(to bottom, rgba(0,0,0,0.55), transparent)",
+              paddingBottom: 28,
+            }}
+          >
+            <Link
+              href="/"
+              className="pointer-events-auto mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm"
+              aria-label="Kembali"
+            >
+              <i className="fa-solid fa-chevron-left text-lg" />
+            </Link>
+            <div className="min-w-0 flex-1 pt-1.5 pr-2">
+              <div className="truncate text-[13px] font-semibold leading-tight text-white drop-shadow">
+                {detail.title}
+              </div>
+              <div className="mt-0.5 text-[11px] text-white/75">
+                Ep {episode}
+                {detail.episodeCount ? ` / ${detail.episodeCount}` : ""}
+              </div>
+            </div>
+          </div>
+
           <EngagementRail
             targetType="dramabos"
             targetId={targetId}
@@ -128,7 +139,8 @@ export default async function DramaWatchPage({
         </div>
       </div>
 
-      <div className="max-h-[42vh] shrink-0 space-y-2 overflow-y-auto border-t border-[var(--color-neutral-800)] px-4 py-3.5">
+      {/* Meta sheet under the player */}
+      <div className="max-h-[38vh] shrink-0 space-y-2 overflow-y-auto border-t border-white/10 bg-[var(--color-neutral-900)] px-4 py-3.5 text-[var(--color-neutral-100)]">
         <div className="flex items-center gap-2">
           <span className="text-[13px] font-extrabold">@{providerDisplayName(detail.provider)}</span>
           <span className="tag bg-[#fff2ef] text-[10px] text-[#7c1405]">

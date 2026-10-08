@@ -75,19 +75,23 @@ export function EngagementRail({
 
   return (
     <>
-      {/* Sit above native video controls (~48px) so Bagikan never covers the scrubber */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-14 top-10 z-10 flex items-end justify-end pr-3">
-        <div className="pointer-events-auto flex flex-col items-center gap-5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+      {/* Right rail — above custom scrubber, clear of subtitle zone */}
+      <div className="pointer-events-none absolute bottom-[78px] right-2 top-16 z-30 flex items-end justify-end sm:right-3">
+        <div className="pointer-events-auto flex flex-col items-center gap-4 text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">
           <button type="button" className="flex flex-col items-center gap-1" onClick={toggleLike}>
-            <i
-              className="fa-solid fa-heart text-2xl"
-              style={{ color: liked ? "var(--color-accent)" : "white" }}
-            />
-            <span className="text-[11px]">{fmtNum(likes)}</span>
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/25 backdrop-blur-[2px]">
+              <i
+                className="fa-solid fa-heart text-[22px]"
+                style={{ color: liked ? "var(--color-accent)" : "white" }}
+              />
+            </span>
+            <span className="text-[11px] font-semibold">{fmtNum(likes)}</span>
           </button>
           <button type="button" className="flex flex-col items-center gap-1" onClick={loadComments}>
-            <i className="fa-solid fa-comment text-[23px]" />
-            <span className="text-[11px]">{fmtNum(commentCount)}</span>
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/25 backdrop-blur-[2px]">
+              <i className="fa-solid fa-comment text-[21px]" />
+            </span>
+            <span className="text-[11px] font-semibold">{fmtNum(commentCount)}</span>
           </button>
           <button
             type="button"
@@ -100,8 +104,10 @@ export function EngagementRail({
               }
             }}
           >
-            <i className="fa-solid fa-share text-[21px]" />
-            <span className="text-[11px]">Bagikan</span>
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/25 backdrop-blur-[2px]">
+              <i className="fa-solid fa-share text-[19px]" />
+            </span>
+            <span className="text-[11px] font-semibold">Bagikan</span>
           </button>
         </div>
       </div>

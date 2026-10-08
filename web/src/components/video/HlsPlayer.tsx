@@ -13,6 +13,11 @@ function toPlayableSrc(src: string, type: "hls" | "mp4") {
     return src;
   }
   if (type === "mp4" && src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i)) return src;
+  // Progressive MP4 (NetShort etc.): play direct when URL is absolute HTTPS.
+  // Proxying multi‑MB files through Workers is fragile; CDNs already send CORS *.
+  if (type === "mp4" && /^https?:\/\//i.test(src) && !/\.m3u8(\?|$)/i.test(src)) {
+    return src;
+  }
   if (/^https?:\/\//i.test(src)) {
     return `/api/stream/proxy?url=${encodeURIComponent(src)}`;
   }
@@ -60,7 +65,11 @@ function parseVtt(text: string): Cue[] {
     const [startRaw, endRaw] = timing.split("-->").map((s) => s.trim().split(/\s+/)[0]);
     const start = parseVttTime(startRaw || "");
     const end = parseVttTime(endRaw || "");
-    const textLines = lines.slice(idx + 1).join("\n").replace(/<[^>]+>/g, "").trim();
+    const textLines = lines
+      .slice(idx + 1)
+      .join("\n")
+      .replace(/<[^>]+>/g, "")
+      .trim();
     if (!textLines || !(end > start)) continue;
     cues.push({ start, end, text: textLines });
   }
@@ -70,8 +79,15 @@ function parseVtt(text: string): Cue[] {
 function readSubsPref(): boolean {
   if (typeof window === "undefined") return true;
   const raw = window.localStorage.getItem(SUBS_PREF_KEY);
-  if (raw === null) return true; // Default: Bahasa ON
+  if (raw === null) return true;
   return raw !== "0";
+}
+
+function formatTime(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export function HlsPlayer({
@@ -96,9 +112,23 @@ export function HlsPlayer({
   const [activeText, setActiveText] = useState("");
   const [subsOn, setSubsOn] = useState(true);
   const [subsPending, setSubsPending] = useState(false);
+  const [playing, setPlaying] = useState(true);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [chromeVisible, setChromeVisible] = useState(true);
+  const hideTimer = useRef(0);
   const playable = toPlayableSrc(src, type);
   const isImage = Boolean(src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i));
   const hasSubs = cues.length > 0;
+
+  function bumpChrome() {
+    setChromeVisible(true);
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => {
+      if (!ref.current?.paused) setChromeVisible(false);
+    }, 2400);
+  }
 
   useEffect(() => {
     setSubsOn(readSubsPref());
@@ -106,6 +136,15 @@ export function HlsPlayer({
 
   useEffect(() => {
     setAdvancing(false);
+    setProgress(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setError("");
+    bumpChrome();
+    return () => {
+      if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
   useEffect(() => {
@@ -120,12 +159,14 @@ export function HlsPlayer({
       const isHls = looksLikeHls(src, type);
 
       if (!isHls) {
+        video!.removeAttribute("crossorigin");
         video!.muted = false;
         video!.src = playable;
         try {
           await video!.play();
+          setPlaying(true);
         } catch {
-          /* unmuted autoplay may be blocked */
+          setPlaying(false);
         }
         return;
       }
@@ -137,7 +178,6 @@ export function HlsPlayer({
         const instance = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          // Prefer our Bahasa overlay — ignore embedded/English text tracks.
           enableWebVTT: false,
           enableIMSC1: false,
           enableCEA708Captions: false,
@@ -148,9 +188,8 @@ export function HlsPlayer({
         let mediaRecoveryAttempts = 0;
         instance.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
-          console.error("HLS fatal", data.type, data.details, data);
           if (data.details === "bufferAddCodecError") {
-            setError("Codec video tidak didukung browser ini (coba Chrome/Safari terbaru).");
+            setError("Codec video tidak didukung browser ini.");
             instance.destroy();
             return;
           }
@@ -170,19 +209,17 @@ export function HlsPlayer({
         instance.attachMedia(video!);
         instance.on(Hls.Events.MANIFEST_PARSED, async () => {
           video!.muted = false;
-          // Disable any native tracks the browser might still expose.
           try {
             const tracks = video!.textTracks;
-            for (let i = 0; i < tracks.length; i++) {
-              tracks[i].mode = "disabled";
-            }
+            for (let i = 0; i < tracks.length; i++) tracks[i].mode = "disabled";
           } catch {
             /* ignore */
           }
           try {
             await video!.play();
+            setPlaying(true);
           } catch {
-            /* unmuted autoplay may be blocked */
+            setPlaying(false);
           }
         });
         hls = instance;
@@ -194,8 +231,9 @@ export function HlsPlayer({
         video!.src = playable;
         try {
           await video!.play();
+          setPlaying(true);
         } catch {
-          /* ignore */
+          setPlaying(false);
         }
         return;
       }
@@ -224,7 +262,51 @@ export function HlsPlayer({
     return () => video.removeEventListener("ended", onEnded);
   }, [nextHref, router, isImage, src]);
 
-  // Custom Bahasa cue overlay — default ON. Poll while Workers AI generates.
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || isImage) return;
+
+    const onTime = () => {
+      const d = video.duration || 0;
+      const t = video.currentTime || 0;
+      setDuration(d);
+      setCurrentTime(t);
+      setProgress(d > 0 ? Math.min(1, t / d) : 0);
+    };
+    const onPlay = () => {
+      setPlaying(true);
+      bumpChrome();
+    };
+    const onPause = () => {
+      setPlaying(false);
+      setChromeVisible(true);
+    };
+    const onErr = () => {
+      const mediaError = video.error;
+      setError(
+        mediaError?.message ||
+          (mediaError?.code === 4
+            ? "Format video tidak bisa diputar."
+            : "Gagal memutar video."),
+      );
+    };
+
+    video.addEventListener("timeupdate", onTime);
+    video.addEventListener("loadedmetadata", onTime);
+    video.addEventListener("play", onPlay);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("error", onErr);
+    return () => {
+      video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("loadedmetadata", onTime);
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("error", onErr);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, isImage, playable]);
+
+  // Bahasa cue overlay + poll while Workers AI generates.
   useEffect(() => {
     if (!subtitleUrl || isImage) {
       setCues([]);
@@ -305,8 +387,6 @@ export function HlsPlayer({
       return;
     }
 
-    // Trust VTT times from Whisper (no baked lead). Tiny early bias only so
-    // text is readable slightly before the ear catches the word (~1 frame).
     const OFFSET = 0.12;
     let raf = 0;
     let alive = true;
@@ -366,6 +446,33 @@ export function HlsPlayer({
     };
   }, [cues, hasSubs, subsOn, src]);
 
+  async function togglePlay() {
+    const video = ref.current;
+    if (!video) return;
+    bumpChrome();
+    if (video.paused) {
+      try {
+        await video.play();
+        setPlaying(true);
+      } catch {
+        setPlaying(false);
+      }
+    } else {
+      video.pause();
+      setPlaying(false);
+    }
+  }
+
+  function seekRatio(clientX: number, el: HTMLElement) {
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const video = ref.current;
+    if (!video || !video.duration) return;
+    video.currentTime = ratio * video.duration;
+    setProgress(ratio);
+    bumpChrome();
+  }
+
   function toggleSubs() {
     setSubsOn((prev) => {
       const next = !prev;
@@ -376,6 +483,7 @@ export function HlsPlayer({
       }
       return next;
     });
+    bumpChrome();
   }
 
   if (isImage) {
@@ -390,46 +498,123 @@ export function HlsPlayer({
   }
 
   return (
-    <div ref={shellRef} className="relative h-full w-full bg-black">
+    <div
+      ref={shellRef}
+      className="player-shell relative h-full w-full touch-manipulation bg-black"
+      onPointerDown={bumpChrome}
+    >
       <video
         ref={ref}
-        className="h-full w-full object-contain"
-        controls
+        className="h-full w-full object-cover"
         playsInline
         autoPlay
-        crossOrigin="anonymous"
+        preload="auto"
         poster={poster}
+        // No native controls — custom short-form chrome below.
+        controls={false}
+        onClick={togglePlay}
       />
 
-      {/* Opaque Bahasa overlay sits over burned-in English hardsubs near the bottom. */}
+      {/* Center play/pause flash */}
+      <button
+        type="button"
+        className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-200 ${
+          chromeVisible && !playing ? "opacity-100" : "opacity-0"
+        }`}
+        aria-hidden
+        tabIndex={-1}
+      >
+        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+          <i className={`fa-solid ${playing ? "fa-pause" : "fa-play"} text-2xl ${playing ? "" : "ml-1"}`} />
+        </span>
+      </button>
+
+      {/* Bahasa overlay — sits above progress, below engagement */}
       {subsOn && activeText ? (
-        <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[88px] z-30 flex justify-center px-3">
-          <div className="max-w-[94%] whitespace-pre-line bg-black/92 px-3.5 py-2 text-center text-[15px] font-semibold leading-snug text-white shadow-[0_2px_12px_rgba(0,0,0,0.55)]">
+        <div className="subtitle-overlay pointer-events-none absolute inset-x-0 bottom-[72px] z-30 flex justify-center px-4 sm:bottom-[80px]">
+          <div className="max-w-[92%] whitespace-pre-line rounded-md bg-black/88 px-3 py-1.5 text-center text-[13px] font-semibold leading-snug text-white sm:text-[14px]">
             {activeText}
           </div>
         </div>
       ) : null}
 
-      <button
-        type="button"
-        onClick={toggleSubs}
-        className="absolute bottom-[52px] right-2 z-40 rounded border border-white/30 bg-black/70 px-2 py-1 text-[11px] font-bold tracking-wide text-white"
-        aria-pressed={subsOn}
-        aria-label={subsOn ? "Matikan subtitle Bahasa" : "Nyalakan subtitle Bahasa"}
-        title="Subtitle Bahasa"
+      {/* Bottom chrome: scrubber + CC */}
+      <div
+        className={`absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-8 transition-opacity duration-200 ${
+          chromeVisible ? "opacity-100" : "opacity-80"
+        }`}
+        style={{
+          background: "linear-gradient(to top, rgba(0,0,0,0.72), transparent)",
+        }}
       >
-        {subsOn ? "ID ON" : "ID OFF"}
-        {subsPending && subsOn ? "…" : ""}
-      </button>
+        <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-white/80">
+          <span className="tabular-nums">
+            {formatTime(currentTime)}
+            {duration ? ` / ${formatTime(duration)}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={toggleSubs}
+            className={`rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wide ${
+              subsOn ? "bg-white text-black" : "bg-white/15 text-white"
+            }`}
+            aria-pressed={subsOn}
+            aria-label={subsOn ? "Matikan subtitle Bahasa" : "Nyalakan subtitle Bahasa"}
+          >
+            {subsPending && subsOn ? "ID…" : "ID"}
+          </button>
+        </div>
+        <div
+          className="group relative h-5 cursor-pointer"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            seekRatio(e.clientX, e.currentTarget);
+          }}
+          onPointerMove={(e) => {
+            if (e.buttons !== 1) return;
+            seekRatio(e.clientX, e.currentTarget);
+          }}
+          role="slider"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(progress * 100)}
+          aria-label="Progress video"
+        >
+          <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-white/25">
+            <div
+              className="h-full rounded-full bg-white transition-[width] duration-75"
+              style={{ width: `${progress * 100}%` }}
+            />
+          </div>
+          <div
+            className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow opacity-0 transition-opacity group-active:opacity-100"
+            style={{ left: `calc(${progress * 100}% - 6px)` }}
+          />
+        </div>
+      </div>
 
       {advancing ? (
-        <div className="absolute inset-x-0 bottom-12 z-20 bg-black/75 px-3 py-2 text-center text-xs text-white">
+        <div className="absolute inset-x-0 bottom-16 z-30 bg-black/75 px-3 py-2 text-center text-xs text-white">
           Lanjut episode berikutnya…
         </div>
       ) : null}
       {error ? (
-        <div className="absolute inset-x-0 bottom-0 bg-black/75 px-3 py-2 text-center text-xs text-white">
+        <div className="absolute inset-x-4 top-1/2 z-30 -translate-y-1/2 rounded-lg bg-black/80 px-4 py-3 text-center text-sm text-white">
           {error}
+          <button
+            type="button"
+            className="mt-2 block w-full text-[12px] font-semibold text-white/90 underline"
+            onClick={() => {
+              setError("");
+              const video = ref.current;
+              if (video) {
+                video.load();
+                void video.play().catch(() => undefined);
+              }
+            }}
+          >
+            Coba lagi
+          </button>
         </div>
       ) : null}
     </div>

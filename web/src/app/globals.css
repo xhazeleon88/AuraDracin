@@ -68,6 +68,7 @@ h4 {
   width: 100%;
   max-width: 480px;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   background: var(--color-bg);
   border-left: 2px solid var(--color-divider);
@@ -75,6 +76,17 @@ h4 {
   display: flex;
   flex-direction: column;
   position: relative;
+}
+
+/* Watch pages: edge-to-edge black stage, no side chrome feeling */
+.phone-shell:has(.watch-page) {
+  background: #000;
+  border-left-color: #000;
+  border-right-color: #000;
+}
+
+.watch-page {
+  min-height: 100%;
 }
 
 .btn {
