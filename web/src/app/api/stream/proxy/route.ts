@@ -21,6 +21,16 @@ function isAllowed(url: URL) {
   );
 }
 
+function hostNeedsRedirect(hostname: string) {
+  const host = hostname.toLowerCase();
+  return (
+    host === "netshort.com" ||
+    host.endsWith(".netshort.com") ||
+    host === "bytevdn.com" ||
+    host.endsWith(".bytevdn.com")
+  );
+}
+
 function shouldProxyUri(uri: string) {
   // Keep data: AES keys and app-local key schemes as-is.
   if (/^(data:|blob:|local:)/i.test(uri)) return false;
@@ -72,6 +82,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "host not allowed" }, { status: 400 });
   }
 
+  // Progressive CDNs (NetShort): never buffer through the app — hand the
+  // browser the origin URL so Range seeks hit the CDN directly.
+  if (hostNeedsRedirect(target.hostname)) {
+    return NextResponse.redirect(target.toString(), 302);
+  }
+
   try {
     // GoodShort CDN (CloudFront) returns 403 when Referer is
     // goodshort.goodbos.online — fetch without Referer/Origin.
@@ -116,7 +132,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Stream bytes through (esp. large MP4) — never buffer whole files in Worker memory.
+    // Large progressive video that slipped past the early redirect.
+    if (contentType.includes("video/") || contentType.includes("mp4")) {
+      return NextResponse.redirect(target.toString(), 302);
+    }
+
+    // Small binary assets (AES keys, init segments) — stream through.
     const headers = new Headers();
     headers.set("Content-Type", contentType || "application/octet-stream");
     headers.set("Cache-Control", "public, max-age=3600");

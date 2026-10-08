@@ -13,8 +13,8 @@ function toPlayableSrc(src: string, type: "hls" | "mp4") {
     return src;
   }
   if (type === "mp4" && src.match(/\.(jpg|jpeg|png|webp)(\?|$)/i)) return src;
-  // Progressive MP4 (NetShort etc.): play direct when URL is absolute HTTPS.
-  // Proxying multi‑MB files through Workers is fragile; CDNs already send CORS *.
+  // Progressive MP4: play CDN URL direct (NetShort sends Access-Control-Allow-Origin: *).
+  // HLS playlists/segments still go through the allowlisted proxy rewriter.
   if (type === "mp4" && /^https?:\/\//i.test(src) && !/\.m3u8(\?|$)/i.test(src)) {
     return src;
   }
